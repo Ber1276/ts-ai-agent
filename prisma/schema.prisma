@@ -1,0 +1,71 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String?
+  knowledgeBase KnowledgeBase[]
+  conversations Conversation[]
+  createdAt DateTime @default(now())
+}
+
+model KnowledgeBase {
+  id String @id @default(cuid())
+  name String
+  description String?
+  user User @relation(fields: [userId], references: [id])
+  userId String
+  documents Document[]
+  createdAt DateTime @default(now())
+}
+
+model Document {
+  id String @id @default(cuid())
+  title String
+  content String
+  status String @default("PENDING") // UPLOADED, PARSED, INDEXED
+  knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id])
+  knowledgeBaseId String
+  createdAt DateTime @default(now())
+  chunks DocumentChunk[]
+}
+
+model DocumentChunk {
+  id String @id @default(cuid())
+  content String
+  document Document @relation(fields: [documentId], references: [id])
+  documentId String
+  createdAt DateTime @default(now())
+  referencedIn Message[]
+}
+
+model Conversation {
+  id String @id @default(cuid())
+  title String
+  user User @relation(fields: [userId], references: [id])
+  userId String
+  messages Message[]
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id String @id @default(cuid())
+  content String
+  role String // USER, ASSISTANT, SYSTEM
+  conversation Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  createdAt DateTime @default(now())
+  sources DocumentChunk[] 
+}
