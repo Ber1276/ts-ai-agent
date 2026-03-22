@@ -12,13 +12,46 @@ datasource db {
   provider = "postgresql"
 }
 
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum DocumentStatus {
+  PENDING
+  PARSED
+  INDEXED
+  FAILED
+}
+
+enum AgentRunStatus {
+  QUEUED
+  RUNNING
+  STREAMING
+  SUCCEEDED
+  FAILED
+  CANCELED
+}
+
+enum TaskStatus {
+  QUEUED
+  RUNNING
+  DONE
+  FAILED
+}
+
 model User {
   id String @id @default(cuid())
   email String @unique
   name String?
   knowledgeBase KnowledgeBase[]
   conversations Conversation[]
+  agents Agent[]
   createdAt DateTime @default(now())
+
+  @@index([createdAt])
 }
 
 model KnowledgeBase {
@@ -29,17 +62,21 @@ model KnowledgeBase {
   userId String
   documents Document[]
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Document {
   id String @id @default(cuid())
   title String
   content String
-  status String @default("PENDING") // UPLOADED, PARSED, INDEXED
+  status DocumentStatus @default(PENDING)
   knowledgeBase KnowledgeBase @relation(fields: [knowledgeBaseId], references: [id])
   knowledgeBaseId String
   createdAt DateTime @default(now())
   chunks DocumentChunk[]
+
+  @@index([knowledgeBaseId, status, createdAt])
 }
 
 model DocumentChunk {
@@ -49,6 +86,9 @@ model DocumentChunk {
   documentId String
   createdAt DateTime @default(now())
   referencedIn Message[]
+  retrievalHits RetrievalHit[]
+
+  @@index([documentId, createdAt])
 }
 
 model Conversation {
@@ -57,15 +97,90 @@ model Conversation {
   user User @relation(fields: [userId], references: [id])
   userId String
   messages Message[]
+  runs AgentRun[]
   createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Message {
   id String @id @default(cuid())
   content String
-  role String // USER, ASSISTANT, SYSTEM
+  role MessageRole
   conversation Conversation @relation(fields: [conversationId], references: [id])
   conversationId String
   createdAt DateTime @default(now())
   sources DocumentChunk[] 
+
+  @@index([conversationId, createdAt])
 }
+
+model Agent {
+  id String @id @default(cuid())
+  name String
+  description String?
+  systemPrompt String?
+  user User @relation(fields: [userId], references: [id])
+  userId String
+  runs AgentRun[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@unique([userId, name])
+}
+
+model AgentRun {
+  id String @id @default(cuid())
+  agent Agent @relation(fields: [agentId], references: [id])
+  agentId String
+  conversation Conversation? @relation(fields: [conversationId], references: [id])
+  conversationId String?
+  status AgentRunStatus @default(QUEUED)
+  input String
+  outputSummary String?
+  startedAt DateTime?
+  finishedAt DateTime?
+  events Json?
+  retrievalHits RetrievalHit[]
+  tasks Task[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([agentId, status, createdAt])
+  @@index([conversationId, createdAt])
+}
+
+model RetrievalHit {
+  id String @id @default(cuid())
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id])
+  agentRunId String
+  documentChunk DocumentChunk @relation(fields: [documentChunkId], references: [id])
+  documentChunkId String
+  score Float
+  snippet String?
+  createdAt DateTime @default(now())
+
+  @@index([agentRunId, score])
+  @@index([documentChunkId])
+}
+
+model Task {
+  id String @id @default(cuid())
+  agentRun AgentRun @relation(fields: [agentRunId], references: [id])
+  agentRunId String
+  type String
+  payload Json?
+  status TaskStatus @default(QUEUED)
+  startedAt DateTime?
+  finishedAt DateTime?
+  error String?
+  createdAt DateTime @default(now())
+
+  @@index([agentRunId, status, createdAt])
+  @@index([status, createdAt])
+}
+
+// TODO(handwrite): add a proper embedding storage strategy.
+// Option A: pgvector columns (recommended for PostgreSQL).
+// Option B: external vector db id mapping table.

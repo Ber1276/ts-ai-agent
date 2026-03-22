@@ -1,11 +1,15 @@
 export const ApiErrorCode = {
-    INVALID_MESSAGE: "INVALID_MESSAGE",
+    VALIDATION_ERROR: "VALIDATION_ERROR",
+    UNAUTHORIZED: "UNAUTHORIZED",
+    NOT_FOUND: "NOT_FOUND",
+    CONFLICT: "CONFLICT",
+    RATE_LIMITED: "RATE_LIMITED",
     INTERNAL_ERROR: "INTERNAL_ERROR",
 };
 export const MessageRole = {
-    USER: 'user',
-    ASSISTANT: 'assistant',
-    SYSTEM: 'system'
+    USER: "user",
+    ASSISTANT: "assistant",
+    SYSTEM: "system",
 };
 export function createSuccessResponse(data) {
     return {
@@ -13,13 +17,11 @@ export function createSuccessResponse(data) {
         data,
     };
 }
-export function createErrorResponse(code, message) {
+export function createErrorResponse(code, message, details) {
+    const error = details === undefined ? { code, message } : { code, message, details };
     return {
         success: false,
-        error: {
-            code,
-            message,
-        },
+        error,
     };
 }
 //# sourceMappingURL=index.js.map

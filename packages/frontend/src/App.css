@@ -1,0 +1,84 @@
+.layout {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px;
+}
+
+.subtitle {
+    margin-top: 8px;
+    color: #475569;
+}
+
+.chat-panel {
+    border: 1px solid #dbe2ea;
+    border-radius: 12px;
+    padding: 16px;
+    height: 460px;
+    overflow-y: auto;
+    background: linear-gradient(180deg, #f8fafc 0%, #eef6ff 100%);
+}
+
+.message {
+    margin-bottom: 14px;
+    padding-bottom: 12px;
+    border-bottom: 1px dashed #cbd5e1;
+}
+
+.message pre {
+    margin: 8px 0 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family:
+        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+        "Liberation Mono", "Courier New", monospace;
+}
+
+.composer {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.composer input {
+    flex: 1;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.composer button {
+    border: 0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    background: #0f172a;
+    color: #ffffff;
+}
+
+.composer button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.hint {
+    color: #475569;
+}
+
+.error {
+    color: #c81e1e;
+}
+
+@media (max-width: 768px) {
+    .layout {
+        padding: 14px;
+    }
+
+    .composer {
+        flex-wrap: wrap;
+    }
+
+    .composer button {
+        flex: 1;
+        min-width: 120px;
+    }
+}

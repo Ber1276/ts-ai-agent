@@ -2,13 +2,18 @@ export interface ApiResponse<T> {
     success: boolean;
     data?: T;
     error?: {
-        code: string;
+        code: ApiErrorCodeType;
         message: string;
+        details?: Record<string, unknown>;
     };
 }
 
 export const ApiErrorCode = {
-    INVALID_MESSAGE: "INVALID_MESSAGE",
+    VALIDATION_ERROR: "VALIDATION_ERROR",
+    UNAUTHORIZED: "UNAUTHORIZED",
+    NOT_FOUND: "NOT_FOUND",
+    CONFLICT: "CONFLICT",
+    RATE_LIMITED: "RATE_LIMITED",
     INTERNAL_ERROR: "INTERNAL_ERROR",
 } as const;
 
@@ -37,6 +42,36 @@ export interface ChatResponse {
     response: string;
 }
 
+export interface StreamChunkEvent {
+    type: "chunk";
+    runId: string;
+    index: number;
+    content: string;
+}
+
+export interface StreamDoneEvent {
+    type: "done";
+    runId: string;
+}
+
+export interface StreamErrorEvent {
+    type: "error";
+    runId: string;
+    message: string;
+}
+
+export interface StreamHeartbeatEvent {
+    type: "heartbeat";
+    runId: string;
+    ts: number;
+}
+
+export type ChatStreamEvent =
+    | StreamChunkEvent
+    | StreamDoneEvent
+    | StreamErrorEvent
+    | StreamHeartbeatEvent;
+
 export function createSuccessResponse<T>(data: T): ApiResponse<T> {
     return {
         success: true,
@@ -47,12 +82,13 @@ export function createSuccessResponse<T>(data: T): ApiResponse<T> {
 export function createErrorResponse(
     code: ApiErrorCodeType,
     message: string,
+    details?: Record<string, unknown>,
 ): ApiResponse<never> {
+    const error =
+        details === undefined ? { code, message } : { code, message, details };
+
     return {
         success: false,
-        error: {
-            code,
-            message,
-        },
+        error,
     };
 }

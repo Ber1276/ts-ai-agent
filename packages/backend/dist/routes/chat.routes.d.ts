@@ -1,37 +1,4 @@
-import { Hono } from "hono";
-export declare const app: Hono<import("hono/types").BlankEnv, import("hono/types").BlankSchema, "/">;
-declare const route: import("hono/hono-base").HonoBase<import("hono/types").BlankEnv, {
-    "/": {
-        $get: {
-            input: {};
-            output: "AI Agent Backend is running";
-            outputFormat: "text";
-            status: import("hono/utils/http-status").ContentfulStatusCode;
-        };
-    };
-} | import("hono/types").MergeSchemaPath<import("hono/types").BlankSchema | import("hono/types").MergeSchemaPath<{
-    "/health": {
-        $get: {
-            input: {};
-            output: {
-                success: boolean;
-                data?: {
-                    status: string;
-                    time: string;
-                } | undefined;
-                error?: {
-                    code: import("share").ApiErrorCodeType;
-                    message: string;
-                    details?: {
-                        [x: string]: import("hono/utils/types").JSONValue;
-                    } | undefined;
-                } | undefined;
-            };
-            outputFormat: "json";
-            status: import("hono/utils/http-status").ContentfulStatusCode;
-        };
-    };
-}, "/"> | import("hono/types").MergeSchemaPath<{
+export declare const chatRoutes: import("hono/hono-base").HonoBase<import("hono/types").BlankEnv, {
     "/": {
         $post: {
             input: {};
@@ -83,7 +50,5 @@ declare const route: import("hono/hono-base").HonoBase<import("hono/types").Blan
             status: import("hono/utils/http-status").StatusCode;
         };
     };
-}, "/chat">, "/api">, "/", "/">;
-export type AppType = typeof route;
-export {};
-//# sourceMappingURL=app.d.ts.map
+}, "/", "/stream">;
+//# sourceMappingURL=chat.routes.d.ts.map
