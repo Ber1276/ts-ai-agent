@@ -1,5 +1,10 @@
 import type { ChatStreamEvent } from "share";
 import { InMemoryTaskQueue } from "../../core/queue/in-memory-task-queue.js";
+import {
+    type ChatRunStore,
+    type PersistedRunStatus,
+    createChatRunStore,
+} from "./chat-run.store.js";
 
 type State =
     | "QUEUED"
@@ -66,6 +71,24 @@ function isTerminalState(state: State): boolean {
 
 function isAbortError(err: unknown): boolean {
     return err instanceof Error && err.name === "AbortError";
+}
+
+function mapStateToPersistedStatus(state: State): PersistedRunStatus {
+    switch (state) {
+        case "QUEUED":
+            return "QUEUED";
+        case "RETRIEVING":
+        case "TOOL_RUNNING":
+            return "RUNNING";
+        case "GENERATING":
+            return "STREAMING";
+        case "DONE":
+            return "SUCCEEDED";
+        case "FAILED":
+            return "FAILED";
+        case "CANCELED":
+            return "CANCELED";
+    }
 }
 
 function buildModelConfigFromEnv(): ModelStreamConfig | null {
@@ -371,9 +394,19 @@ export class ChatStreamService {
     private readonly queue = new InMemoryTaskQueue();
     private readonly canceledRuns = new Set<string>();
     private readonly maxRunMs = 30_000;
+    private readonly runStore: ChatRunStore;
+
+    constructor(runStore: ChatRunStore = createChatRunStore()) {
+        this.runStore = runStore;
+    }
 
     cancelRun(runId: string): void {
         this.canceledRuns.add(runId);
+        this.runStore.appendEvent(runId, "CLIENT_CANCEL_REQUESTED");
+    }
+
+    getRun(runId: string) {
+        return this.runStore.getRun(runId);
     }
 
     createStream(
@@ -393,6 +426,8 @@ export class ChatStreamService {
             updatedAt: Date.now(),
             errorMessage: null,
         };
+
+        this.runStore.createRun(runId, prompt);
 
         return new ReadableStream<Uint8Array>({
             start: (controller) => {
@@ -414,6 +449,12 @@ export class ChatStreamService {
                     );
                 };
 
+                sendEvent({
+                    type: "run_start",
+                    runId,
+                    ts: Date.now(),
+                });
+
                 /**
                  * Single event gateway for state machine:
                  * 1) validate and apply transition
@@ -425,6 +466,16 @@ export class ChatStreamService {
                     }
 
                     applyEvent(ctx, event);
+                    this.runStore.appendEvent(ctx.runId, event.type);
+                    this.runStore.updateRun(ctx.runId, {
+                        status: mapStateToPersistedStatus(ctx.state),
+                        outputSummary: ctx.output.slice(-1200),
+                        retrievalHits: [...ctx.retrievalHits],
+                        errorMessage: ctx.errorMessage,
+                        finishedAt: isTerminalState(ctx.state)
+                            ? new Date().toISOString()
+                            : null,
+                    });
 
                     if (event.type === "TOKEN") {
                         sendEvent({

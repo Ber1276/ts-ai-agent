@@ -1,16 +1,26 @@
 {
-  "name": "ts-ai-agent",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "packageManager": "pnpm@10.32.1",
-  "devDependencies": {
-    "prisma": "^7.5.0"
-  }
+    "name": "ts-ai-agent",
+    "version": "1.0.0",
+    "description": "",
+    "main": "index.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1",
+        "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+        "dev:backend": "dotenv -e .env -- pnpm --filter agent-server dev",
+        "dev:backend:prisma": "dotenv -e .env -- env CHAT_RUN_STORE=prisma pnpm --filter agent-server dev",
+        "self-check:prisma": "dotenv -e .env -- node scripts/self-check-prisma.mjs"
+    },
+    "keywords": [],
+    "author": "",
+    "license": "ISC",
+    "packageManager": "pnpm@10.32.1",
+    "devDependencies": {
+        "@prisma/client": "^7.5.0",
+        "dotenv-cli": "^8.0.0",
+        "prisma": "^7.5.0"
+    },
+    "dependencies": {
+        "@prisma/adapter-pg": "^7.5.0",
+        "pg": "^8.20.0"
+    }
 }

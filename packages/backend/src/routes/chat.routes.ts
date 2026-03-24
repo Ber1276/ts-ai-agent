@@ -22,6 +22,12 @@ export const chatRoutes = new Hono()
         chatStreamService.cancelRun(runId);
         return c.json(createSuccessResponse({ runId, canceled: true }));
     })
+    .get("/stream/runs/:runId", (c) => {
+        const runId = c.req.param("runId");
+        const run = chatStreamService.getRun(runId);
+
+        return c.json(createSuccessResponse({ run }));
+    })
     .get("/stream", (c) => {
         const prompt = c.req.query("prompt") ?? "";
         const stream = chatStreamService.createStream(prompt, c.req.raw.signal);

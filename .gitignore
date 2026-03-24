@@ -3,3 +3,11 @@ node_modules
 .env
 
 /generated/prisma
+
+dist
+
+# backend build artifacts
+packages/backend/dist/
+
+# share build artifacts
+packages/share/dist/

@@ -83,6 +83,9 @@ export function useChat() {
         });
 
         stopStreamRef.current = startChatStream(currentInput, {
+            onRunStart: (event) => {
+                setActiveRunId(event.runId);
+            },
             onChunk: (event) => {
                 setActiveRunId((prev) => prev ?? event.runId);
                 setMessages((prev) =>

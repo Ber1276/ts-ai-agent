@@ -67,6 +67,9 @@ export const cancelChatStream = async (runId: string): Promise<void> => {
 };
 
 export interface ChatStreamCallbacks {
+    onRunStart?: (
+        event: Extract<ChatStreamEvent, { type: "run_start" }>,
+    ) => void;
     onChunk: (event: Extract<ChatStreamEvent, { type: "chunk" }>) => void;
     onDone: (event: Extract<ChatStreamEvent, { type: "done" }>) => void;
     onError: (message: string) => void;
@@ -85,6 +88,11 @@ export const startChatStream = (
     source.onmessage = (event) => {
         try {
             const parsed = JSON.parse(event.data) as ChatStreamEvent;
+
+            if (parsed.type === "run_start") {
+                callbacks.onRunStart?.(parsed);
+                return;
+            }
 
             if (parsed.type === "chunk") {
                 callbacks.onChunk(parsed);

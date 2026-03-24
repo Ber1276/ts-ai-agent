@@ -49,6 +49,12 @@ export interface StreamChunkEvent {
     content: string;
 }
 
+export interface StreamStartEvent {
+    type: "run_start";
+    runId: string;
+    ts: number;
+}
+
 export interface StreamDoneEvent {
     type: "done";
     runId: string;
@@ -67,6 +73,7 @@ export interface StreamHeartbeatEvent {
 }
 
 export type ChatStreamEvent =
+    | StreamStartEvent
     | StreamChunkEvent
     | StreamDoneEvent
     | StreamErrorEvent
