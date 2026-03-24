@@ -160,7 +160,6 @@ async function main() {
         {
             env: {
                 ...process.env,
-                CHAT_RUN_STORE: "prisma",
                 PORT: String(serverPort),
             },
             stdio: ["ignore", "pipe", "pipe"],

@@ -5,13 +5,14 @@ import { chatStreamService } from "../modules/chat/chat-stream.service.js";
 import {
     parseCancelRunId,
     parseChatRequest,
+    parseChatStreamRequest,
 } from "../modules/chat/chat.validator.js";
 
 export const chatRoutes = new Hono()
     .post("/", async (c) => {
         const payload = await c.req.json();
         const req = parseChatRequest(payload);
-        const response = generateChatResponse(req);
+        const response = await generateChatResponse(req);
 
         return c.json(createSuccessResponse(response));
     })
@@ -22,15 +23,34 @@ export const chatRoutes = new Hono()
         chatStreamService.cancelRun(runId);
         return c.json(createSuccessResponse({ runId, canceled: true }));
     })
-    .get("/stream/runs/:runId", (c) => {
+    .get("/stream/runs/:runId", async (c) => {
         const runId = c.req.param("runId");
-        const run = chatStreamService.getRun(runId);
+        const run = await chatStreamService.getRun(runId);
 
         return c.json(createSuccessResponse({ run }));
     })
+    .post("/stream", async (c) => {
+        const payload = await c.req.json().catch(() => null);
+        const req = parseChatStreamRequest(payload);
+        const stream = chatStreamService.createStream(
+            req.prompt,
+            c.req.raw.signal,
+            req.modelSelection,
+        );
+
+        return c.newResponse(stream, 200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+        });
+    })
     .get("/stream", (c) => {
         const prompt = c.req.query("prompt") ?? "";
-        const stream = chatStreamService.createStream(prompt, c.req.raw.signal);
+        const stream = chatStreamService.createStream(
+            prompt,
+            c.req.raw.signal,
+            undefined,
+        );
 
         return c.newResponse(stream, 200, {
             "Content-Type": "text/event-stream",

@@ -17,7 +17,7 @@ export const healthRoutes = new Hono()
     })
     .get("/health/db", async (c) => {
         const db = await checkDatabaseHealth();
-        const storeMode = process.env.CHAT_RUN_STORE ?? "memory";
+        const storeMode = "prisma";
 
         if (!db.ok) {
             return c.json(

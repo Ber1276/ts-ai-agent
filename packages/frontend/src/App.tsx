@@ -1,72 +1,26 @@
-import "./App.css";
-import { useChat } from "./hooks/useChat";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { RootLayout } from "./components/layout/RootLayout";
+import { ChatPage } from "./pages/ChatPage";
+import { ModelsPage } from "./pages/ModelsPage";
+import { KnowledgePage } from "./pages/KnowledgePage";
 
 function App() {
-    const {
-        input,
-        setInput,
-        messages,
-        loading,
-        streaming,
-        error,
-        lastHeartbeatAt,
-        canSend,
-        sendOnce,
-        sendStream,
-        stopStream,
-    } = useChat();
-
     return (
-        <div className="layout">
-            <h1>AI Agent Platform Scaffold</h1>
-            <p className="subtitle">
-                Chat + SSE streaming skeleton is ready. Complete all TODO blocks
-                by hand.
-            </p>
+        <Routes>
+            <Route element={<RootLayout />}>
+                {/* 默认跳转到聊天页面 */}
+                <Route index element={<ChatPage />} />
 
-            <div className="chat-panel">
-                {/* TODO(handwrite): replace this plain list with a virtual list.
-                    Required: support 10k+ messages with stable scroll anchoring and dynamic row height measurement.
-                */}
-                {messages.map((msg) => (
-                    <div key={msg.id} className="message">
-                        <strong>
-                            {msg.role === "user" ? "You" : "Assistant"}:
-                        </strong>
-                        <pre>{msg.content}</pre>
-                    </div>
-                ))}
-                {loading && <p className="hint">Loading response...</p>}
-                {streaming && <p className="hint">Streaming response...</p>}
-                {streaming && lastHeartbeatAt && (
-                    <p className="hint">
-                        Heartbeat:{" "}
-                        {new Date(lastHeartbeatAt).toLocaleTimeString()}
-                    </p>
-                )}
-                {error && <p className="error">Error: {error}</p>}
-            </div>
+                {/* 模型管理路由 */}
+                <Route path="models" element={<ModelsPage />} />
 
-            <div className="composer">
-                <input
-                    type="text"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && sendOnce()}
-                    placeholder="Enter message"
-                    disabled={loading || streaming}
-                />
-                <button onClick={sendOnce} disabled={!canSend}>
-                    Send once
-                </button>
-                <button onClick={sendStream} disabled={!canSend}>
-                    Send stream
-                </button>
-                <button onClick={stopStream} disabled={!streaming}>
-                    Stop stream
-                </button>
-            </div>
-        </div>
+                {/* 知识库管理路由 */}
+                <Route path="knowledge" element={<KnowledgePage />} />
+
+                {/* 通配符跳转 */}
+                <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+        </Routes>
     );
 }
 

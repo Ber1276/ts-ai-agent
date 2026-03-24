@@ -1,10 +1,19 @@
 import type { ChatStreamEvent } from "share";
-import { InMemoryTaskQueue } from "../../core/queue/in-memory-task-queue.js";
+import type { ModelSelectionInput } from "share";
 import {
     type ChatRunStore,
     type PersistedRunStatus,
     createChatRunStore,
 } from "./chat-run.store.js";
+import {
+    resolveModelSelection,
+    type ResolvedModelConfig,
+} from "../model/model-service.js";
+import { retrieveFromIndexedDocuments } from "../rag/document-index.js";
+import {
+    logUpstreamHttpError,
+    readUpstreamError,
+} from "../model/upstream-error.js";
 
 type State =
     | "QUEUED"
@@ -20,7 +29,7 @@ type EventType =
     | { type: "RETRIEVAL_OK"; hits: string[] }
     | { type: "RETRIEVAL_ERR"; error: string }
     | { type: "START_GENERATION" }
-    | { type: "TOKEN"; text: string }
+    | { type: "TOKEN"; text: string; chunkType?: "content" | "reasoning" }
     | { type: "TOOL_CALL"; tool: string; args: object }
     | { type: "TOOL_OK"; result: string }
     | { type: "TOOL_ERR"; error: string }
@@ -41,12 +50,6 @@ interface RunContext {
     errorMessage: string | null;
 }
 
-interface ModelStreamConfig {
-    endpoint: string;
-    model: string;
-    apiKey: string;
-}
-
 const TERMINAL_STATES: ReadonlySet<State> = new Set([
     "DONE",
     "FAILED",
@@ -55,15 +58,15 @@ const TERMINAL_STATES: ReadonlySet<State> = new Set([
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// In-memory corpus used for a handwritten keyword retrieval baseline.
-const KNOWLEDGE_DOCS = [
-    "RAG pipeline: chunking -> embedding -> retrieval -> generation",
-    "State machine: explicit transitions and terminal state guards",
-    "SSE streaming: send 'data:' lines and terminate with blank line separators",
-    "Task queues decouple request lifecycle from generation workloads",
-    "Type-safe API contracts reduce frontend/backend drift",
-    "Use AbortSignal for cooperative cancel in streaming workloads",
-];
+function getChatStreamTimeoutMs(): number {
+    const raw = Number(process.env.CHAT_STREAM_TIMEOUT_MS ?? "180000");
+    if (!Number.isFinite(raw)) {
+        return 180000;
+    }
+
+    // Keep a reasonable lower bound to avoid accidental tiny timeout values.
+    return Math.max(30000, Math.floor(raw));
+}
 
 function isTerminalState(state: State): boolean {
     return TERMINAL_STATES.has(state);
@@ -91,18 +94,6 @@ function mapStateToPersistedStatus(state: State): PersistedRunStatus {
     }
 }
 
-function buildModelConfigFromEnv(): ModelStreamConfig | null {
-    const endpoint = process.env.LLM_API_ENDPOINT;
-    const model = process.env.LLM_API_MODEL;
-    const apiKey = process.env.LLM_API_KEY;
-
-    if (!endpoint || !model || !apiKey) {
-        return null;
-    }
-
-    return { endpoint, model, apiKey };
-}
-
 /**
  * Pure transition function.
  * It only answers "what is the next state" and never performs side effects.
@@ -126,6 +117,9 @@ function transition(state: State, event: EventType): State {
         case "QUEUED":
             if (event.type === "START_RETRIEVAL") {
                 return "RETRIEVING";
+            }
+            if (event.type === "MODEL_ERR") {
+                return "FAILED";
             }
             break;
         case "RETRIEVING":
@@ -212,30 +206,8 @@ function applyEvent(ctx: RunContext, event: EventType): void {
  * This gives you a no-SDK retrieval implementation before vector DB integration.
  */
 async function retrieveContext(prompt: string): Promise<string[]> {
-    const tokens = prompt
-        .toLowerCase()
-        .split(/\W+/)
-        .filter((t) => t.length >= 3);
-
-    if (tokens.length === 0) {
-        return [];
-    }
-
-    const scored = KNOWLEDGE_DOCS.map((doc) => {
-        const lowered = doc.toLowerCase();
-        const score = tokens.reduce(
-            (acc, token) => acc + (lowered.includes(token) ? 1 : 0),
-            0,
-        );
-        return { doc, score };
-    })
-        .filter((item) => item.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3)
-        .map((item) => item.doc);
-
-    await sleep(40);
-    return scored;
+    await sleep(20);
+    return retrieveFromIndexedDocuments(prompt, 6);
 }
 
 /**
@@ -313,28 +285,8 @@ async function* streamModelTokens(
     ctx: RunContext,
     retrievalHits: string[],
     signal: AbortSignal,
-): AsyncGenerator<string> {
-    const modelConfig = buildModelConfigFromEnv();
-
-    // Fallback mode keeps your state machine exercisable without external dependency.
-    if (!modelConfig) {
-        const base = retrievalHits.length
-            ? `context: ${retrievalHits.join(" | ")}`
-            : "context: none";
-
-        const fakeOutput = `${base}\nreply: ${ctx.prompt}`;
-        const chunks = fakeOutput.match(/.{1,16}/g) ?? [fakeOutput];
-
-        for (const piece of chunks) {
-            if (signal.aborted) {
-                throw new DOMException("Aborted", "AbortError");
-            }
-            await sleep(110);
-            yield `${piece}`;
-        }
-        return;
-    }
-
+    modelConfig: ResolvedModelConfig,
+): AsyncGenerator<{ chunkType: "content" | "reasoning"; text: string }> {
     // OpenAI-compatible payload (handwritten HTTP call, no SDK).
     const response = await fetch(modelConfig.endpoint, {
         method: "POST",
@@ -361,7 +313,17 @@ async function* streamModelTokens(
     });
 
     if (!response.ok) {
-        throw new Error(`Model HTTP error: ${response.status}`);
+        const errorText = await readUpstreamError(response);
+        logUpstreamHttpError(
+            {
+                scope: "chat-stream",
+                endpoint: modelConfig.endpoint,
+                model: modelConfig.model,
+                source: modelConfig.source,
+            },
+            errorText,
+        );
+        throw new Error(errorText);
     }
 
     if (!response.body) {
@@ -380,20 +342,34 @@ async function* streamModelTokens(
             continue;
         }
 
-        const token =
-            (parsed as { choices?: Array<{ delta?: { content?: string } }> })
-                .choices?.[0]?.delta?.content ?? "";
+        const delta = (
+            parsed as {
+                choices?: Array<{
+                    delta?: {
+                        content?: string;
+                        reasoning?: string;
+                        reasoning_content?: string;
+                    };
+                }>;
+            }
+        ).choices?.[0]?.delta;
 
-        if (token) {
-            yield token;
+        const reasoningToken =
+            delta?.reasoning_content ?? delta?.reasoning ?? "";
+        if (reasoningToken.length > 0) {
+            yield { chunkType: "reasoning", text: reasoningToken };
+        }
+
+        const contentToken = delta?.content ?? "";
+        if (contentToken) {
+            yield { chunkType: "content", text: contentToken };
         }
     }
 }
 
 export class ChatStreamService {
-    private readonly queue = new InMemoryTaskQueue();
     private readonly canceledRuns = new Set<string>();
-    private readonly maxRunMs = 30_000;
+    private readonly maxRunMs = getChatStreamTimeoutMs();
     private readonly runStore: ChatRunStore;
 
     constructor(runStore: ChatRunStore = createChatRunStore()) {
@@ -402,7 +378,7 @@ export class ChatStreamService {
 
     cancelRun(runId: string): void {
         this.canceledRuns.add(runId);
-        this.runStore.appendEvent(runId, "CLIENT_CANCEL_REQUESTED");
+        void this.runStore.appendEvent(runId, "CLIENT_CANCEL_REQUESTED");
     }
 
     getRun(runId: string) {
@@ -412,6 +388,7 @@ export class ChatStreamService {
     createStream(
         prompt: string,
         signal: AbortSignal,
+        modelSelection?: ModelSelectionInput,
     ): ReadableStream<Uint8Array> {
         const runId = `run_${Date.now()}`;
         const encoder = new TextEncoder();
@@ -426,8 +403,6 @@ export class ChatStreamService {
             updatedAt: Date.now(),
             errorMessage: null,
         };
-
-        this.runStore.createRun(runId, prompt);
 
         return new ReadableStream<Uint8Array>({
             start: (controller) => {
@@ -460,14 +435,14 @@ export class ChatStreamService {
                  * 1) validate and apply transition
                  * 2) project internal state changes to SSE messages
                  */
-                const dispatch = (event: EventType) => {
+                const dispatch = async (event: EventType) => {
                     if (isTerminalState(ctx.state)) {
                         return;
                     }
 
                     applyEvent(ctx, event);
-                    this.runStore.appendEvent(ctx.runId, event.type);
-                    this.runStore.updateRun(ctx.runId, {
+                    await this.runStore.appendEvent(ctx.runId, event.type);
+                    await this.runStore.updateRun(ctx.runId, {
                         status: mapStateToPersistedStatus(ctx.state),
                         outputSummary: ctx.output.slice(-1200),
                         retrievalHits: [...ctx.retrievalHits],
@@ -483,6 +458,7 @@ export class ChatStreamService {
                             runId: ctx.runId,
                             index: ctx.chunkIndex,
                             content: event.text,
+                            chunkType: event.chunkType,
                         });
                         return;
                     }
@@ -513,13 +489,24 @@ export class ChatStreamService {
 
                 const timeout = setTimeout(() => {
                     if (!isTerminalState(ctx.state)) {
-                        dispatch({ type: "TIMEOUT" });
+                        void dispatch({ type: "TIMEOUT" });
                     }
                 }, this.maxRunMs);
 
-                this.queue.enqueue(async () => {
+                void (async () => {
                     try {
-                        dispatch({ type: "START_RETRIEVAL" });
+                        await this.runStore.createRun(runId, prompt);
+
+                        const resolvedModelConfig =
+                            await resolveModelSelection(modelSelection);
+
+                        if (!resolvedModelConfig) {
+                            throw new Error(
+                                "Model config is required. Select a service or set server default env.",
+                            );
+                        }
+
+                        await dispatch({ type: "START_RETRIEVAL" });
 
                         let hits: string[] = [];
                         try {
@@ -529,27 +516,33 @@ export class ChatStreamService {
                                 err instanceof Error
                                     ? err.message
                                     : "Retrieval failed";
-                            dispatch({ type: "RETRIEVAL_ERR", error: message });
+                            await dispatch({
+                                type: "RETRIEVAL_ERR",
+                                error: message,
+                            });
                             return;
                         }
 
                         if (this.canceledRuns.has(runId)) {
-                            dispatch({ type: "CLIENT_CANCEL" });
+                            await dispatch({ type: "CLIENT_CANCEL" });
                             return;
                         }
 
-                        dispatch({ type: "RETRIEVAL_OK", hits });
-                        dispatch({ type: "START_GENERATION" });
+                        await dispatch({ type: "RETRIEVAL_OK", hits });
+                        await dispatch({ type: "START_GENERATION" });
 
                         const toolResult = await runToolFromPrompt(ctx.prompt);
                         if (toolResult) {
-                            dispatch({
+                            await dispatch({
                                 type: "TOOL_CALL",
                                 tool: "local.tool",
                                 args: { prompt: ctx.prompt },
                             });
-                            dispatch({ type: "TOOL_OK", result: toolResult });
-                            dispatch({
+                            await dispatch({
+                                type: "TOOL_OK",
+                                result: toolResult,
+                            });
+                            await dispatch({
                                 type: "TOKEN",
                                 text: `[tool] ${toolResult}\n`,
                             });
@@ -559,25 +552,33 @@ export class ChatStreamService {
                             ctx,
                             hits,
                             signal,
+                            resolvedModelConfig,
                         )) {
                             if (this.canceledRuns.has(runId)) {
-                                dispatch({ type: "CLIENT_CANCEL" });
+                                await dispatch({ type: "CLIENT_CANCEL" });
                                 return;
                             }
 
-                            dispatch({ type: "TOKEN", text: token });
+                            await dispatch({
+                                type: "TOKEN",
+                                text: token.text,
+                                chunkType: token.chunkType,
+                            });
                         }
 
-                        dispatch({ type: "MODEL_DONE" });
+                        await dispatch({ type: "MODEL_DONE" });
                     } catch (err) {
                         if (this.canceledRuns.has(runId) || isAbortError(err)) {
-                            dispatch({ type: "CLIENT_CANCEL" });
+                            await dispatch({ type: "CLIENT_CANCEL" });
                         } else {
                             const message =
                                 err instanceof Error
                                     ? err.message
                                     : "Unknown stream error";
-                            dispatch({ type: "MODEL_ERR", error: message });
+                            await dispatch({
+                                type: "MODEL_ERR",
+                                error: message,
+                            });
                         }
                     } finally {
                         this.canceledRuns.delete(runId);
@@ -585,12 +586,12 @@ export class ChatStreamService {
                         clearTimeout(timeout);
                         closeIfNeeded();
                     }
-                });
+                })();
 
                 signal.addEventListener("abort", () => {
                     this.canceledRuns.add(runId);
                     if (!isTerminalState(ctx.state)) {
-                        dispatch({ type: "CLIENT_CANCEL" });
+                        void dispatch({ type: "CLIENT_CANCEL" });
                     }
                     clearInterval(heartbeat);
                     clearTimeout(timeout);

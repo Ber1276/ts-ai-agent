@@ -9,6 +9,76 @@
     color: #475569;
 }
 
+.config-panel {
+    border: 1px solid #dbe2ea;
+    border-radius: 12px;
+    padding: 14px;
+    margin-bottom: 12px;
+    background: #ffffff;
+}
+
+.config-panel h2 {
+    margin: 0 0 10px;
+    font-size: 18px;
+}
+
+.config-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.config-row label {
+    min-width: 64px;
+    color: #334155;
+}
+
+.config-row select {
+    flex: 1;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.config-grid {
+    display: grid;
+    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.config-grid input {
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px;
+}
+
+.config-actions {
+    margin-top: 10px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.config-actions button,
+.config-row button {
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    background: #0f172a;
+    color: #fff;
+}
+
+.checkbox-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #334155;
+    font-size: 14px;
+}
+
 .chat-panel {
     border: 1px solid #dbe2ea;
     border-radius: 12px;
@@ -71,6 +141,14 @@
 @media (max-width: 768px) {
     .layout {
         padding: 14px;
+    }
+
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .config-row {
+        flex-wrap: wrap;
     }
 
     .composer {

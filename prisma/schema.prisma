@@ -48,9 +48,27 @@ model User {
   knowledgeBase KnowledgeBase[]
   conversations Conversation[]
   agents Agent[]
+  modelServices ModelServiceConfig[]
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+model ModelServiceConfig {
+  id String @id @default(cuid())
+  user User @relation(fields: [userId], references: [id])
+  userId String
+  label String
+  endpoint String
+  model String
+  apiKey String?
+  isDefault Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, isDefault, createdAt])
+  @@index([userId, isActive, createdAt])
 }
 
 model KnowledgeBase {

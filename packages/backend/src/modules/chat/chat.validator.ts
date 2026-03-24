@@ -1,4 +1,10 @@
-import { MessageRole, type ChatMessage, type ChatRequest } from "share";
+import {
+    MessageRole,
+    type ChatMessage,
+    type ChatRequest,
+    type ChatStreamRequest,
+    type ModelSelectionInput,
+} from "share";
 import { AppError } from "../../core/errors/app-error.js";
 
 export function parseChatRequest(payload: unknown): ChatRequest {
@@ -32,6 +38,65 @@ export function parseCancelRunId(payload: unknown): string {
     }
 
     return runId;
+}
+
+export function parseChatStreamRequest(payload: unknown): ChatStreamRequest {
+    if (!payload || typeof payload !== "object") {
+        throw new AppError(
+            400,
+            "VALIDATION_ERROR",
+            "Payload must be an object",
+        );
+    }
+
+    const request = payload as Partial<ChatStreamRequest>;
+    const prompt =
+        typeof request.prompt === "string" ? request.prompt.trim() : "";
+
+    if (!prompt) {
+        throw new AppError(400, "VALIDATION_ERROR", "prompt is required");
+    }
+
+    const modelSelection = parseModelSelection(request.modelSelection);
+
+    return {
+        prompt,
+        modelSelection,
+    };
+}
+
+function parseModelSelection(input: unknown): ModelSelectionInput | undefined {
+    if (input === undefined || input === null) {
+        return undefined;
+    }
+
+    if (typeof input !== "object") {
+        throw new AppError(
+            400,
+            "VALIDATION_ERROR",
+            "modelSelection must be an object",
+        );
+    }
+
+    const selection = input as ModelSelectionInput;
+    return {
+        serviceId:
+            typeof selection.serviceId === "string"
+                ? selection.serviceId.trim()
+                : undefined,
+        endpoint:
+            typeof selection.endpoint === "string"
+                ? selection.endpoint.trim()
+                : undefined,
+        model:
+            typeof selection.model === "string"
+                ? selection.model.trim()
+                : undefined,
+        apiKey:
+            typeof selection.apiKey === "string"
+                ? selection.apiKey.trim()
+                : undefined,
+    };
 }
 
 function validateMessage(message: ChatMessage): void {

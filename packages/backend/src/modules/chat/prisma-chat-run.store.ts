@@ -1,150 +1,115 @@
+import { getPrismaClient } from "../../core/db/prisma-client.js";
 import type { ChatRunStore, PersistedRun } from "./chat-run.store.js";
 
-/**
- * Prisma-backed run store.
- *
- * Design note:
- * - ChatRunStore API is synchronous by design (to keep stream state updates simple).
- * - We keep an in-memory mirror for fast reads and enqueue async DB writes in background.
- */
 export class PrismaChatRunStore implements ChatRunStore {
-    private prisma: Record<string, unknown> | null = null;
-    private readonly cache = new Map<string, PersistedRun>();
-    private writeChain: Promise<void> = Promise.resolve();
-    private canPersist = true;
     private contextPromise: Promise<{ agentId: string } | null> | null = null;
 
-    constructor() {
-        // Lazy init in background-write path. Constructor stays sync for DI ergonomics.
-    }
+    async createRun(runId: string, input: string): Promise<void> {
+        const prisma = getPrismaClient();
+        const context = await this.ensureContext();
+        if (!context) {
+            throw new Error("Failed to resolve default agent context");
+        }
 
-    createRun(runId: string, input: string): void {
-        const now = new Date().toISOString();
-        const run: PersistedRun = {
-            runId,
-            status: "QUEUED",
-            input,
-            outputSummary: "",
-            retrievalHits: [],
-            errorMessage: null,
-            startedAt: now,
-            finishedAt: null,
-            updatedAt: now,
-            events: ["QUEUED"],
-        };
-        this.cache.set(runId, run);
-
-        this.enqueueWrite(async () => {
-            const prisma = await this.getPrisma();
-            if (!prisma) {
-                return;
-            }
-            const context = await this.ensureContext();
-            if (!context) {
-                return;
-            }
-
-            await (
-                prisma as {
-                    agentRun: { create: (arg: unknown) => Promise<unknown> };
-                }
-            ).agentRun.create({
-                data: {
-                    id: runId,
-                    agentId: context.agentId,
-                    input,
-                    status: "QUEUED",
-                    startedAt: new Date(now),
-                    events: ["QUEUED"],
-                },
-            });
+        await prisma.agentRun.create({
+            data: {
+                id: runId,
+                agentId: context.agentId,
+                input,
+                status: "QUEUED",
+                startedAt: new Date(),
+                events: ["QUEUED"],
+            },
         });
     }
 
-    updateRun(runId: string, patch: Partial<PersistedRun>): void {
-        const current = this.cache.get(runId);
-        if (!current) {
+    async updateRun(
+        runId: string,
+        patch: Partial<PersistedRun>,
+    ): Promise<void> {
+        const prisma = getPrismaClient();
+
+        await prisma.agentRun.update({
+            where: { id: runId },
+            data: {
+                status: patch.status,
+                outputSummary: patch.outputSummary || null,
+                finishedAt: patch.finishedAt
+                    ? new Date(patch.finishedAt)
+                    : null,
+            },
+        });
+    }
+
+    async appendEvent(runId: string, event: string): Promise<void> {
+        const prisma = getPrismaClient();
+        const run = await prisma.agentRun.findUnique({
+            where: { id: runId },
+            select: {
+                events: true,
+            },
+        });
+
+        if (!run) {
             return;
         }
 
-        const next: PersistedRun = {
-            ...current,
-            ...patch,
-            updatedAt: new Date().toISOString(),
-        };
-        this.cache.set(runId, next);
+        const currentEvents = Array.isArray(run.events)
+            ? run.events.map((item) => String(item))
+            : [];
 
-        this.enqueueWrite(async () => {
-            const prisma = await this.getPrisma();
-            if (!prisma) {
-                return;
-            }
+        await prisma.agentRun.update({
+            where: { id: runId },
+            data: {
+                events: [...currentEvents, event],
+            },
+        });
+    }
 
-            await (
-                prisma as {
-                    agentRun: { update: (arg: unknown) => Promise<unknown> };
-                }
-            ).agentRun.update({
-                where: { id: runId },
-                data: {
-                    status: next.status,
-                    outputSummary: next.outputSummary || null,
-                    finishedAt: next.finishedAt
-                        ? new Date(next.finishedAt)
-                        : null,
-                    events: next.events,
+    async getRun(runId: string): Promise<PersistedRun | null> {
+        const prisma = getPrismaClient();
+
+        const run = await prisma.agentRun.findUnique({
+            where: { id: runId },
+            include: {
+                retrievalHits: {
+                    select: {
+                        snippet: true,
+                        score: true,
+                    },
+                    orderBy: {
+                        score: "desc",
+                    },
+                    take: 5,
                 },
-            });
+            },
         });
-    }
 
-    appendEvent(runId: string, event: string): void {
-        const current = this.cache.get(runId);
-        if (!current) {
-            return;
-        }
-
-        const next = {
-            ...current,
-            events: [...current.events, event],
-            updatedAt: new Date().toISOString(),
-        };
-        this.cache.set(runId, next);
-
-        this.enqueueWrite(async () => {
-            const prisma = await this.getPrisma();
-            if (!prisma) {
-                return;
-            }
-
-            await (
-                prisma as {
-                    agentRun: { update: (arg: unknown) => Promise<unknown> };
-                }
-            ).agentRun.update({
-                where: { id: runId },
-                data: {
-                    events: next.events,
-                },
-            });
-        });
-    }
-
-    getRun(runId: string): PersistedRun | null {
-        return this.cache.get(runId) ?? null;
-    }
-
-    private enqueueWrite(job: () => Promise<void>): void {
-        this.writeChain = this.writeChain.then(job).catch((err) => {
-            console.error("PrismaChatRunStore write failed:", err);
-        });
-    }
-
-    private async ensureContext(): Promise<{ agentId: string } | null> {
-        if (!this.canPersist) {
+        if (!run) {
             return null;
         }
 
+        const events = Array.isArray(run.events)
+            ? run.events.map((item) => String(item))
+            : [];
+
+        return {
+            runId: run.id,
+            status: run.status,
+            input: run.input,
+            outputSummary: run.outputSummary ?? "",
+            retrievalHits: run.retrievalHits
+                .map((item) => item.snippet)
+                .filter((item): item is string => Boolean(item)),
+            errorMessage: null,
+            startedAt: (run.startedAt ?? run.createdAt).toISOString(),
+            finishedAt: run.finishedAt?.toISOString() ?? null,
+            updatedAt: run.updatedAt.toISOString(),
+            events,
+        };
+    }
+
+    private async ensureContext(): Promise<{ agentId: string } | null> {
         if (!this.contextPromise) {
             this.contextPromise = this.resolveContext();
         }
@@ -153,10 +118,7 @@ export class PrismaChatRunStore implements ChatRunStore {
     }
 
     private async resolveContext(): Promise<{ agentId: string } | null> {
-        const prisma = await this.getPrisma();
-        if (!prisma) {
-            return null;
-        }
+        const prisma = getPrismaClient();
 
         const userEmail =
             process.env.CHAT_RUN_STORE_USER_EMAIL ?? "dev@local.agent";
@@ -164,22 +126,13 @@ export class PrismaChatRunStore implements ChatRunStore {
         const agentName =
             process.env.CHAT_RUN_STORE_AGENT_NAME ?? "default-agent";
 
-        const userDelegate = (prisma as { user: Record<string, unknown> })
-            .user as {
-            upsert: (arg: unknown) => Promise<{ id: string }>;
-        };
-        const agentDelegate = (prisma as { agent: Record<string, unknown> })
-            .agent as {
-            upsert: (arg: unknown) => Promise<{ id: string }>;
-        };
-
-        const user = await userDelegate.upsert({
+        const user = await prisma.user.upsert({
             where: { email: userEmail },
             update: { name: userName },
             create: { email: userEmail, name: userName },
         });
 
-        const agent = await agentDelegate.upsert({
+        const agent = await prisma.agent.upsert({
             where: {
                 userId_name: {
                     userId: user.id,
@@ -195,80 +148,6 @@ export class PrismaChatRunStore implements ChatRunStore {
         });
 
         return { agentId: agent.id };
-    }
-
-    private async getPrisma(): Promise<Record<string, unknown> | null> {
-        if (!this.canPersist) {
-            return null;
-        }
-
-        if (this.prisma) {
-            return this.prisma;
-        }
-
-        try {
-            const mod = (await this.loadPrismaModule()) as unknown as {
-                PrismaClient?: new (
-                    ...args: unknown[]
-                ) => Record<string, unknown>;
-                default?: {
-                    PrismaClient?: new (
-                        ...args: unknown[]
-                    ) => Record<string, unknown>;
-                };
-            };
-
-            const Client = mod.PrismaClient ?? mod.default?.PrismaClient;
-            if (!Client) {
-                throw new Error("PrismaClient export not found");
-            }
-
-            const { PrismaPg } = (await import("@prisma/adapter-pg")) as {
-                PrismaPg: new (arg: { connectionString: string }) => unknown;
-            };
-            const connectionString = process.env.DATABASE_URL;
-            if (!connectionString) {
-                throw new Error(
-                    "DATABASE_URL is required for PrismaPg adapter",
-                );
-            }
-
-            const adapter = new PrismaPg({ connectionString });
-            this.prisma = new Client({ adapter });
-
-            const hasAgentRun = Boolean(
-                (this.prisma as { agentRun?: unknown }).agentRun,
-            );
-            const hasUser = Boolean((this.prisma as { user?: unknown }).user);
-            const hasAgent = Boolean(
-                (this.prisma as { agent?: unknown }).agent,
-            );
-
-            if (!hasAgentRun || !hasUser || !hasAgent) {
-                this.canPersist = false;
-                this.prisma = null;
-                console.warn(
-                    "PrismaChatRunStore disabled: prisma client is missing user/agent/agentRun models. Run prisma generate after schema updates.",
-                );
-                return null;
-            }
-
-            return this.prisma;
-        } catch (err) {
-            this.canPersist = false;
-            this.prisma = null;
-            console.warn(
-                "PrismaChatRunStore disabled: failed to initialize @prisma/client. Fallback in-memory writes only.",
-                err,
-            );
-            return null;
-        }
-    }
-
-    private async loadPrismaModule(): Promise<unknown> {
-        // Enterprise default: use @prisma/client from node_modules.
-        // It is generated via `prisma generate` and stays independent from repo folder layout.
-        return import("@prisma/client");
     }
 }
 

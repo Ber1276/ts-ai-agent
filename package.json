@@ -7,7 +7,7 @@
         "test": "echo \"Error: no test specified\" && exit 1",
         "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
         "dev:backend": "dotenv -e .env -- pnpm --filter agent-server dev",
-        "dev:backend:prisma": "dotenv -e .env -- env CHAT_RUN_STORE=prisma pnpm --filter agent-server dev",
+        "dev:backend:prisma": "dotenv -e .env -- pnpm --filter agent-server dev",
         "self-check:prisma": "dotenv -e .env -- node scripts/self-check-prisma.mjs"
     },
     "keywords": [],

@@ -42,11 +42,60 @@ export interface ChatResponse {
     response: string;
 }
 
+export interface ModelSelectionInput {
+    serviceId?: string;
+    endpoint?: string;
+    model?: string;
+    apiKey?: string;
+}
+
+export interface ChatStreamRequest {
+    prompt: string;
+    modelSelection?: ModelSelectionInput;
+}
+
+export interface ModelServiceItem {
+    id: string;
+    label: string;
+    endpoint: string;
+    model: string;
+    needsClientApiKey: boolean;
+    isDefault: boolean;
+    source: "database" | "preset";
+}
+
+export interface ModelServiceSaveInput {
+    id?: string;
+    label: string;
+    endpoint: string;
+    model: string;
+    apiKey?: string;
+    isDefault?: boolean;
+}
+
+export interface ModelServiceSaveRequest {
+    service: ModelServiceSaveInput;
+}
+
+export interface ModelServiceTestRequest {
+    modelSelection: ModelSelectionInput;
+}
+
+export interface ModelServiceTestResult {
+    ok: boolean;
+    latencyMs: number;
+    resolvedModel: string;
+    resolvedEndpoint: string;
+    preview: string;
+    error?: string;
+}
+
 export interface StreamChunkEvent {
     type: "chunk";
     runId: string;
     index: number;
     content: string;
+    chunkType?: "content" | "reasoning";
 }
 
 export interface StreamStartEvent {
