@@ -90,6 +90,40 @@ export interface ModelServiceTestResult {
     error?: string;
 }
 
+export type RagRetrieverMode = "keyword" | "vector" | "hybrid";
+
+export type RagVectorStore = "database" | "memory" | "pgvector";
+
+export interface RagConfigInfo {
+    retrieverMode: RagRetrieverMode;
+    vectorStore: RagVectorStore;
+    chunkSize: number;
+    chunkOverlap: number;
+    topK: number;
+    minScore: number;
+    embeddingEndpoint: string;
+    embeddingModel: string;
+    embeddingApiKeySet: boolean;
+    embeddingDimensions: number;
+}
+
+export interface RagConfigUpdateInput {
+    retrieverMode?: RagRetrieverMode;
+    vectorStore?: RagVectorStore;
+    chunkSize?: number;
+    chunkOverlap?: number;
+    topK?: number;
+    minScore?: number;
+    embeddingEndpoint?: string;
+    embeddingModel?: string;
+    embeddingApiKey?: string;
+    embeddingDimensions?: number;
+}
+
+export interface RagConfigUpdateRequest {
+    config: RagConfigUpdateInput;
+}
+
 export interface StreamChunkEvent {
     type: "chunk";
     runId: string;
@@ -121,12 +155,24 @@ export interface StreamHeartbeatEvent {
     ts: number;
 }
 
+export interface StreamRetrievalEvent {
+    type: "retrieval_hits";
+    runId: string;
+    hits: Array<{
+        documentId: string;
+        documentTitle: string;
+        content: string;
+        score?: number;
+    }>;
+}
+
 export type ChatStreamEvent =
     | StreamStartEvent
     | StreamChunkEvent
     | StreamDoneEvent
     | StreamErrorEvent
-    | StreamHeartbeatEvent;
+    | StreamHeartbeatEvent
+    | StreamRetrievalEvent;
 
 export function createSuccessResponse<T>(data: T): ApiResponse<T> {
     return {

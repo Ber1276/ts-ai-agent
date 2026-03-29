@@ -29,6 +29,15 @@ export const chatRoutes = new Hono()
 
         return c.json(createSuccessResponse({ run }));
     })
+    .get("/stream/runs", async (c) => {
+        const runs = await chatStreamService.listRuns();
+        return c.json(createSuccessResponse({ runs }));
+    })
+    .delete("/stream/runs/:runId", async (c) => {
+        const runId = c.req.param("runId");
+        await chatStreamService.deleteRun(runId);
+        return c.json(createSuccessResponse({ success: true }));
+    })
     .post("/stream", async (c) => {
         const payload = await c.req.json().catch(() => null);
         const req = parseChatStreamRequest(payload);

@@ -24,6 +24,8 @@ export interface ChatRunStore {
     updateRun(runId: string, patch: Partial<PersistedRun>): Promise<void>;
     appendEvent(runId: string, event: string): Promise<void>;
     getRun(runId: string): Promise<PersistedRun | null>;
+    listRuns(): Promise<PersistedRun[]>;
+    deleteRun(runId: string): Promise<void>;
 }
 
 import { createPrismaChatRunStore } from "./prisma-chat-run.store.js";

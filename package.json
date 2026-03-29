@@ -1,23 +1,65 @@
 {
     "name": "ts-ai-agent",
     "version": "1.0.0",
-    "description": "",
-    "main": "index.js",
-    "scripts": {
-        "test": "echo \"Error: no test specified\" && exit 1",
-        "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
-        "dev:backend": "dotenv -e .env -- pnpm --filter agent-server dev",
-        "dev:backend:prisma": "dotenv -e .env -- pnpm --filter agent-server dev",
-        "self-check:prisma": "dotenv -e .env -- node scripts/self-check-prisma.mjs"
-    },
-    "keywords": [],
-    "author": "",
-    "license": "ISC",
+    "description": "Full-stack AI Agent platform with RAG, streaming chat, and agent orchestration",
+    "private": true,
+    "type": "module",
     "packageManager": "pnpm@10.32.1",
+    "engines": {
+        "node": ">=20.0.0",
+        "pnpm": ">=10.0.0"
+    },
+    "scripts": {
+        "preinstall": "npx only-allow pnpm",
+
+        "=========== Setup ===========": "",
+        "setup": "pnpm install && pnpm env:check && pnpm db:generate && pnpm db:push",
+        "env:check": "node scripts/env-check.mjs",
+
+        "=========== Development ===========": "",
+        "dev": "npm-run-all2 --parallel dev:backend dev:frontend",
+        "dev:frontend": "pnpm --filter frontend dev",
+        "dev:backend": "dotenv -e .env -- pnpm --filter agent-server dev",
+
+        "=========== Build ===========": "",
+        "build": "pnpm --filter share build && pnpm --filter agent-server build && pnpm --filter frontend build",
+        "build:share": "pnpm --filter share build",
+        "build:backend": "pnpm --filter agent-server build",
+        "build:frontend": "pnpm --filter frontend build",
+
+        "=========== Database (Prisma) ===========": "",
+        "db:generate": "prisma generate --schema=prisma/schema.prisma",
+        "db:push": "dotenv -e .env -- prisma db push --schema=prisma/schema.prisma",
+        "db:migrate:dev": "dotenv -e .env -- prisma migrate dev --schema=prisma/schema.prisma",
+        "db:migrate:deploy": "dotenv -e .env -- prisma migrate deploy --schema=prisma/schema.prisma",
+        "db:migrate:reset": "dotenv -e .env -- prisma migrate reset --schema=prisma/schema.prisma",
+        "db:studio": "dotenv -e .env -- prisma studio --schema=prisma/schema.prisma",
+        "db:seed": "dotenv -e .env -- tsx prisma/seed.ts",
+        "db:status": "dotenv -e .env -- prisma migrate status --schema=prisma/schema.prisma",
+
+        "=========== Code Quality ===========": "",
+        "lint": "pnpm --filter frontend lint",
+        "format": "prettier --write \"packages/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+        "format:check": "prettier --check \"packages/**/*.{ts,tsx,js,jsx,json,css,md}\"",
+        "typecheck": "pnpm -r --parallel run typecheck",
+
+        "=========== Testing ===========": "",
+        "test": "echo \"No tests configured yet\" && exit 0",
+        "self-check:prisma": "dotenv -e .env -- node scripts/self-check-prisma.mjs",
+
+        "=========== Utilities ===========": "",
+        "clean": "pnpm -r exec rm -rf dist && pnpm -r exec rm -rf node_modules && rm -rf node_modules",
+        "clean:dist": "pnpm -r exec rm -rf dist",
+        "start:backend": "dotenv -e .env -- pnpm --filter agent-server start",
+        "preview:frontend": "pnpm --filter frontend preview"
+    },
     "devDependencies": {
         "@prisma/client": "^7.5.0",
         "dotenv-cli": "^8.0.0",
-        "prisma": "^7.5.0"
+        "npm-run-all2": "^7.0.0",
+        "prettier": "^3.3.0",
+        "prisma": "^7.5.0",
+        "tsx": "^4.7.1"
     },
     "dependencies": {
         "@prisma/adapter-pg": "^7.5.0",

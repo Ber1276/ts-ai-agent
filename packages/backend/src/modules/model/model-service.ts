@@ -209,7 +209,8 @@ export async function saveModelService(
     const label = trimOrEmpty(input.label);
     const endpoint = mustBeHttpUrl(trimOrEmpty(input.endpoint), "endpoint");
     const model = trimOrEmpty(input.model);
-    const apiKey = trimOrEmpty(input.apiKey);
+    const hasProvidedApiKey = typeof input.apiKey === "string";
+    const apiKey = hasProvidedApiKey ? trimOrEmpty(input.apiKey) : undefined;
     const requestedId = trimOrEmpty(input.id);
 
     if (!label || !model) {
@@ -244,7 +245,7 @@ export async function saveModelService(
                   label,
                   endpoint,
                   model,
-                  apiKey: apiKey || null,
+                  apiKey: hasProvidedApiKey ? (apiKey || null) : undefined,
                   isDefault,
                   isActive: true,
               },
@@ -255,7 +256,7 @@ export async function saveModelService(
                   label,
                   endpoint,
                   model,
-                  apiKey: apiKey || null,
+                  apiKey: (apiKey ?? "") || null,
                   isDefault,
                   isActive: true,
               },

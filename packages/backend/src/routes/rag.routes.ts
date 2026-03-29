@@ -1,9 +1,19 @@
 import { Hono } from "hono";
+import { createRequire } from "module";
+import type { RagConfigUpdateRequest } from "share";
+
+const require = createRequire(import.meta.url);
+const { PDFParse } = require("pdf-parse");
 import { AppError } from "../core/errors/app-error.js";
 import {
+    getRagConfig,
     getRagStrategyInfo,
     ingestPlainTextDocument,
     listIndexedDocuments,
+    updateRagConfig,
+    testEmbeddingConnection,
+    getOrCreateRagConfigRecord,
+    ensureDefaultKnowledgeBaseId,
 } from "../modules/rag/document-index.js";
 import { createSuccessResponse } from "share";
 
@@ -13,13 +23,70 @@ function getMaxUploadBytes(): number {
 }
 
 export const ragRoutes = new Hono()
+    .get("/config", async (c) => {
+        const config = await getRagConfig();
+        return c.json(createSuccessResponse({ config }));
+    })
+    .put("/config", async (c) => {
+        const payload = (await c.req
+            .json()
+            .catch(() => null)) as RagConfigUpdateRequest | null;
+
+        if (!payload?.config || typeof payload.config !== "object") {
+            throw new AppError(
+                400,
+                "VALIDATION_ERROR",
+                "config payload is required",
+            );
+        }
+
+        const config = await updateRagConfig(payload.config);
+        return c.json(createSuccessResponse({ config }));
+    })
+    .post("/test-embedding", async (c) => {
+        const payload = (await c.req
+            .json()
+            .catch(() => null)) as RagConfigUpdateRequest | null;
+        if (!payload?.config || typeof payload.config !== "object") {
+             throw new AppError(400, "VALIDATION_ERROR", "config payload is required");
+        }
+        
+        let apiKey = payload.config.embeddingApiKey ?? "";
+        if (!apiKey) {
+             const kbId = await ensureDefaultKnowledgeBaseId();
+             const existing = await getOrCreateRagConfigRecord(kbId);
+             apiKey = existing.embeddingApiKey ?? "";
+        }
+        
+        if (!payload.config.embeddingModel || !payload.config.embeddingEndpoint || !apiKey) {
+            throw new AppError(400, "VALIDATION_ERROR", "缺少必要的 Embedding 配置信息");
+        }
+
+        const dims = payload.config.embeddingDimensions ?? 1536;
+        
+        const testResult = await testEmbeddingConnection(
+            payload.config.embeddingEndpoint,
+            payload.config.embeddingModel,
+            apiKey,
+            dims
+        );
+        
+        if (!testResult.ok) {
+            throw new AppError(400, "VALIDATION_ERROR", testResult.message ?? "Embedding 连接失败");
+        }
+
+        return c.json(createSuccessResponse({ vectorSize: testResult.vectorSize }));
+    })
     .get("/strategy", async (c) => {
         const strategy = await getRagStrategyInfo();
         const indexedDocuments = await listIndexedDocuments();
+        const config = await getRagConfig();
+
         return c.json(
             createSuccessResponse({
                 strategy,
                 indexedDocuments,
+                config,
             }),
         );
     })
@@ -66,8 +133,27 @@ export const ragRoutes = new Hono()
                 );
             }
 
-            content = await file.text();
-            title = title || String(file.name ?? "uploaded-document");
+            const fileName = String(file.name ?? "uploaded-document");
+            const fileType = (file as unknown as File).type;
+            const isPdf = fileType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
+
+            if (isPdf && typeof (file as unknown as File).arrayBuffer === "function") {
+                const arrayBuffer = await (file as unknown as File).arrayBuffer();
+                const buffer = Buffer.from(arrayBuffer);
+                const parser = new PDFParse({ data: buffer });
+                
+                try {
+                    const pdfData = await parser.getText();
+                    content = pdfData.text;
+                } finally {
+                    await parser.destroy();
+                }
+                
+                title = title || fileName;
+            } else {
+                content = await file.text();
+                title = title || fileName;
+            }
         }
 
         if (!content.trim()) {

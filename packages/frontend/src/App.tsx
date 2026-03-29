@@ -8,7 +8,7 @@ function App() {
     return (
         <Routes>
             <Route element={<RootLayout />}>
-                {/* 默认跳转到聊天页面 */}
+                {/* 默认跳转到对话页 */}
                 <Route index element={<ChatPage />} />
 
                 {/* 模型管理路由 */}

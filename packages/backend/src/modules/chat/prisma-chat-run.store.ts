@@ -109,6 +109,40 @@ export class PrismaChatRunStore implements ChatRunStore {
         };
     }
 
+    async listRuns(): Promise<PersistedRun[]> {
+        const prisma = getPrismaClient();
+        const context = await this.ensureContext();
+        if (!context) {
+            return [];
+        }
+
+        const runs = await prisma.agentRun.findMany({
+            where: { agentId: context.agentId },
+            orderBy: { startedAt: "desc" },
+            take: 50,
+        });
+
+        return runs.map(run => ({
+            runId: run.id,
+            status: run.status,
+            input: run.input,
+            outputSummary: run.outputSummary ?? "",
+            retrievalHits: [],
+            errorMessage: null,
+            startedAt: (run.startedAt ?? run.createdAt).toISOString(),
+            finishedAt: run.finishedAt?.toISOString() ?? null,
+            updatedAt: run.updatedAt.toISOString(),
+            events: [],
+        }));
+    }
+
+    async deleteRun(runId: string): Promise<void> {
+        const prisma = getPrismaClient();
+        await prisma.agentRun.delete({
+            where: { id: runId },
+        });
+    }
+
     private async ensureContext(): Promise<{ agentId: string } | null> {
         if (!this.contextPromise) {
             this.contextPromise = this.resolveContext();

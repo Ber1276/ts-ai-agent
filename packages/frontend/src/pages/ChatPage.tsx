@@ -1,20 +1,31 @@
 import {
     Bot,
-    Send,
-    Loader2,
-    User,
     ChevronRight,
     Wand2,
-    Hash,
     Trash2,
+    MessageSquare,
+    Plus,
+    Search,
+    BrainCircuit,
+    ArrowUp,
+    Menu,
+    Loader2,
+    Clock,
+    Settings,
+    LayoutGrid,
+    SearchCode,
+    Sparkles
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { useChat } from "../hooks/useChat";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
-import { ScrollArea } from "../components/ui/scroll-area";
-import { Badge } from "../components/ui/badge";
+import { cn } from "../lib/utils";
+import { useState, useEffect, useRef, useMemo } from "react";
 
+/**
+ * ChatPage - A simplified, ultra-reliable implementation of the chat interface sidebar.
+ * Focuses on concrete width inheritance to prevent horizontal overflow in historical lists.
+ */
 export function ChatPage() {
     const {
         messages,
@@ -26,8 +37,22 @@ export function ChatPage() {
         clearError,
         isThinking,
         ragStrategy,
-        activeModel,
+        modelServices,
+        selectedServiceId,
+        setSelectedServiceId,
+        historyRuns,
+        setMessages,
+        removeHistoryRun,
     } = useChat();
+
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+    const scrollEndRef = useRef<HTMLDivElement>(null);
+
+    // Auto-scroll logic
+    useEffect(() => {
+        scrollEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [messages]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === "Enter" && !e.shiftKey) {
@@ -36,218 +61,340 @@ export function ChatPage() {
         }
     };
 
-    return (
-        <div className="flex-1 flex flex-col min-h-0 bg-[#F9FBFC]">
-            <header className="flex h-16 items-center justify-between border-b border-border bg-card px-6 shrink-0 relative z-10">
-                <div className="flex items-center gap-4">
-                    <div className="bg-primary/5 p-2 rounded-lg ring-1 ring-primary/10">
-                        <Bot className="h-5 w-5 text-primary" />
-                    </div>
-                    <div className="flex flex-col">
-                        <h2 className="text-sm font-bold leading-none mb-1">
-                            AI 智能对话助手
-                        </h2>
-                        <div className="flex items-center gap-2 group cursor-pointer transition-opacity hover:opacity-80">
-                            <Badge
-                                variant="secondary"
-                                className="px-2 py-0 text-[10px] font-mono text-muted-foreground uppercase tracking-widest bg-muted h-5 shrink-0"
-                            >
-                                {activeModel?.name || "GLOBAL AI"}
-                            </Badge>
-                            <ChevronRight className="h-3 w-3 text-muted-foreground opacity-50" />
-                            <span className="text-[10px] text-muted-foreground font-medium truncate max-w-[150px]">
-                                {activeModel?.id || "未配置模型"}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3">
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void clearChat()}
-                        className="h-9 px-3 text-muted-foreground hover:text-destructive hover:bg-destructive/5 transition-all"
-                    >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        清空对话
-                    </Button>
-                    <div className="h-4 w-[1px] bg-border/50" />
-                    <div className="flex items-center gap-2 text-[11px] font-medium text-muted-foreground bg-muted/50 px-3 py-1.5 rounded-full border border-border/40">
-                        <span className="relative flex h-2 w-2">
-                            <span
-                                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isThinking ? "bg-orange-400" : "bg-green-400"}`}
-                            ></span>
-                            <span
-                                className={`relative inline-flex rounded-full h-2 w-2 ${isThinking ? "bg-orange-500" : "bg-green-500"}`}
-                            ></span>
-                        </span>
-                        {isThinking ? "AI 正在思考" : "模型就绪"}
-                    </div>
-                </div>
-            </header>
+    // Grouping helper
+    const groupedHistory = useMemo(() => {
+        const groups: Record<string, any[]> = {
+            "今天": [],
+            "昨天": [],
+            "过去七天": [],
+            "更早": []
+        };
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const sevenDaysAgo = new Date(today);
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-            <ScrollArea className="flex-1 px-6 min-h-0">
-                <div className="max-w-4xl mx-auto py-12 space-y-10">
-                    {messages.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-24 space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700">
-                            <div className="relative">
-                                <div className="absolute -inset-4 bg-primary/20 blur-2xl rounded-full opacity-30 animate-pulse" />
-                                <Bot
-                                    className="h-20 w-20 text-primary relative"
-                                    strokeWidth={1.5}
-                                />
-                            </div>
-                            <div className="text-center space-y-3">
-                                <h3 className="text-2xl font-bold tracking-tight">
-                                    您好，我是您的 AI 助手
-                                </h3>
-                                <p className="text-muted-foreground max-w-md mx-auto leading-relaxed">
-                                    今天我可以帮您做些什么？您可以尝试问我关于知识库中的内容，或者直接开始对话。
-                                </p>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3 w-full max-w-lg pt-4">
-                                {[
-                                    "总结上传的文档",
-                                    "分析系统架构",
-                                    "编写代码逻辑",
-                                    "通用语言助手",
-                                ].map((tip, idx) => (
-                                    <button
-                                        key={idx}
-                                        className="flex items-center justify-between p-4 bg-card border border-border rounded-xl text-left hover:border-primary/50 hover:shadow-sm transition-all group"
-                                    >
-                                        <span className="text-sm font-medium">
-                                            {tip}
-                                        </span>
-                                        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors" />
-                                    </button>
-                                ))}
-                            </div>
+        historyRuns.forEach(run => {
+            const runDate = new Date(run.startedAt);
+            if (runDate >= today) groups["今天"].push(run);
+            else if (runDate >= yesterday) groups["昨天"].push(run);
+            else if (runDate >= sevenDaysAgo) groups["过去七天"].push(run);
+            else groups["更早"].push(run);
+        });
+        return Object.entries(groups).filter(([_, items]) => items.length > 0);
+    }, [historyRuns]);
+
+    return (
+        <div className="flex w-full h-full bg-background overflow-hidden font-sans antialiased">
+            {/* 
+                Bulletproof Sidebar 
+                - w-[260px] fixed width with no expansion allowed.
+                - overflow-x-hidden for safety.
+            */}
+            <aside 
+                className={cn(
+                    "group relative h-full border-r border-border bg-muted/20 flex flex-col shrink-0 transition-all duration-300 ease-in-out z-30",
+                    isSidebarOpen ? "w-[260px]" : "w-0 overflow-hidden -translate-x-full"
+                )}
+            >
+                {/* Header */}
+                <div className="h-16 w-full flex items-center px-4 shrink-0 border-b border-border/10">
+                    <div className="flex items-center gap-2 overflow-hidden">
+                        <div className="h-6 w-6 bg-primary rounded-lg flex items-center justify-center shrink-0 shadow-lg shadow-primary/20">
+                            <Sparkles className="h-3.5 w-3.5 text-white" />
                         </div>
-                    ) : (
-                        messages.map((message, index) => (
-                            <div
-                                key={index}
-                                className={`flex items-start gap-5 group animate-in slide-in-from-bottom-2 duration-300 ${message.role === "user" ? "flex-row-reverse" : ""}`}
-                            >
-                                <div
-                                    className={`mt-1 h-10 w-10 shrink-0 rounded-2xl flex items-center justify-center border shadow-sm transition-all ${
-                                        message.role === "user"
-                                            ? "bg-primary border-primary text-primary-foreground"
-                                            : "bg-white border-border"
-                                    }`}
-                                >
-                                    {message.role === "user" ? (
-                                        <User className="h-5 w-5" />
-                                    ) : (
-                                        <Bot className="h-5 w-5 text-primary" />
-                                    )}
+                        <span className="text-sm font-black tracking-tight uppercase truncate">Intelligence</span>
+                    </div>
+                </div>
+
+                {/* New Chat Button Area */}
+                <div className="p-3 shrink-0">
+                    <Button 
+                        onClick={() => {
+                            clearChat();
+                            setSelectedHistoryId(null);
+                        }}
+                        className="w-full flex items-center justify-start gap-2 h-11 rounded-xl bg-background border border-border hover:bg-muted text-foreground font-bold shadow-sm"
+                    >
+                        <Plus className="h-4 w-4 text-primary" strokeWidth={3} />
+                        <span className="text-[13px] truncate">开启全新对话</span>
+                    </Button>
+                </div>
+
+                {/* 
+                    Unified History Scroller 
+                    - No complicated ScrollArea wrapper to prevent inner calculated widths.
+                    - Uses native overflow-y-auto for 100% reliable sizing.
+                */}
+                <div className="flex-1 w-full overflow-y-auto overflow-x-hidden pt-2 scrollbar-thin scrollbar-thumb-border">
+                    <div className="px-2 pb-12 w-full flex flex-col gap-6">
+                        {groupedHistory.map(([groupName, items]) => (
+                            <div key={groupName} className="flex flex-col w-full">
+                                <h4 className="px-3 py-2 text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em]">
+                                    {groupName}
+                                </h4>
+                                <div className="flex flex-col gap-1 w-full">
+                                    {items.map((run) => (
+                                        <div 
+                                            key={run.runId} 
+                                            className={cn(
+                                                "group/item flex items-center w-full min-w-0 h-10 rounded-lg transition-all duration-200 overflow-hidden",
+                                                selectedHistoryId === run.runId ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-muted/80 hover:text-foreground"
+                                            )}
+                                        >
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedHistoryId(run.runId);
+                                                    setMessages([
+                                                        { id: `u-${run.runId}`, role: "user", content: run.input },
+                                                        { id: `a-${run.runId}`, role: "assistant", content: run.outputSummary || "[内容生成中断]" }
+                                                    ]);
+                                                }}
+                                                className="flex-1 flex items-center gap-2 px-3 min-w-0 h-full text-left"
+                                            >
+                                                <MessageSquare className={cn(
+                                                    "h-3.5 w-3.5 shrink-0 transition-opacity",
+                                                    selectedHistoryId === run.runId ? "opacity-100" : "opacity-40"
+                                                )} />
+                                                <span className="flex-1 text-[13px] font-bold truncate leading-none">
+                                                    {run.input}
+                                                </span>
+                                            </button>
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (confirm("确定要删除此对话吗？")) {
+                                                        void removeHistoryRun(run.runId);
+                                                        if (selectedHistoryId === run.runId) {
+                                                            clearChat();
+                                                            setSelectedHistoryId(null);
+                                                        }
+                                                    }
+                                                }}
+                                                className="h-7 w-7 mr-1 shrink-0 flex items-center justify-center rounded-md opacity-20 hover:opacity-100 hover:bg-destructive/10 hover:text-destructive transition-all"
+                                                title="删除"
+                                            >
+                                                <Trash2 className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                    ))}
                                 </div>
-                                <div
-                                    className={`flex flex-col max-w-[85%] space-y-2 ${message.role === "user" ? "items-end" : ""}`}
-                                >
-                                    <div className="flex items-center gap-3 px-1">
-                                        <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/60">
-                                            {message.role === "user"
-                                                ? "You"
-                                                : "Assistant"}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Footer Section */}
+                <div className="p-4 shrink-0 border-t border-border/10">
+                    <div className="flex items-center justify-between px-2">
+                        <button className="flex items-center gap-2 text-[10px] font-black text-muted-foreground hover:text-primary transition-colors uppercase tracking-widest">
+                            <Settings className="h-3.5 w-3.5" />
+                            <span>Settings</span>
+                        </button>
+                        <div className="h-1.5 w-1.5 rounded-full bg-green-500 shadow-sm" />
+                    </div>
+                </div>
+
+                {/* Sidebar Collapse Toggle */}
+                <button 
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="absolute -right-3 top-1/2 -translate-y-1/2 h-8 w-6 bg-background border border-border rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity z-50 hover:bg-muted shadow-sm"
+                >
+                    <ChevronRight className="h-3 w-3 rotate-180" />
+                </button>
+            </aside>
+
+            {/* Chat Area */}
+            <main className="flex-1 flex flex-col min-w-0 bg-[#FAFAFA] dark:bg-background h-full overflow-hidden relative">
+                {!isSidebarOpen && (
+                    <Button 
+                        variant="ghost" 
+                        size="icon" 
+                        className="fixed left-6 top-6 z-40 h-10 w-10 rounded-2xl shadow-xl border border-border bg-background/80 backdrop-blur-md"
+                        onClick={() => setIsSidebarOpen(true)}
+                    >
+                        <Menu className="h-4 w-4" />
+                    </Button>
+                )}
+
+                <header className="h-16 flex items-center justify-between px-8 border-b border-border/20 bg-background/50 backdrop-blur-lg shrink-0">
+                    <div className="flex flex-col">
+                        <h2 className="text-[12px] font-black uppercase tracking-[0.2em] flex items-center gap-2">
+                            Console
+                            <div className="h-1 w-1 rounded-full bg-primary" />
+                        </h2>
+                        <span className="text-[10px] opacity-40 uppercase font-medium mt-0.5 tracking-widest">RAG Engine Running</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="bg-muted px-4 py-1.5 rounded-xl border border-border flex items-center min-w-[160px]">
+                            <select 
+                                className="bg-transparent outline-none cursor-pointer text-[11px] font-black w-full appearance-none pr-6 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIGZpbGw9Im5vbmUiIHZpZXdCb3g9IjAgMCAyNCAyNCIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj48cGF0aCBkPSJtNiA5IDYgNiA2LTYiLz48L3N2Zz4=')] bg-[length:1rem] bg-[position:right_center] bg-no-repeat"
+                                value={selectedServiceId}
+                                onChange={(e) => setSelectedServiceId(e.target.value)}
+                            >
+                                {modelServices.map((m) => (
+                                    <option key={m.id} value={m.id}>{m.label}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <Button 
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-10 w-10 rounded-xl hover:bg-destructive/10 group"
+                            onClick={() => void clearChat()}
+                        >
+                            <Trash2 className="h-4 w-4 text-muted-foreground group-hover:text-destructive" />
+                        </Button>
+                    </div>
+                </header>
+
+                {/* Message Log */}
+                <div className="flex-1 w-full overflow-y-auto scroll-smooth">
+                    <div className="max-w-4xl mx-auto py-12 px-6 sm:px-12 space-y-12 pb-40">
+                        {messages.length === 0 ? (
+                            <div className="py-20 flex flex-col items-center justify-center animate-in fade-in zoom-in-95 duration-700">
+                                <div className="h-20 w-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mb-8">
+                                    <Bot className="h-10 w-10 text-primary" strokeWidth={1.5} />
+                                </div>
+                                <h1 className="text-2xl font-black uppercase tracking-tight mb-3">开启智慧对话</h1>
+                                <p className="text-sm text-center text-muted-foreground/60 max-w-sm mb-12">
+                                    请输入您的问题，我将结合企业知识库为您提供深度精准的解答。
+                                </p>
+                                <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
+                                    {["解析文档核心", "语义搜索增强", "知识库洞察", "自然语言交流"].map((t, i) => (
+                                        <Button 
+                                            key={i} 
+                                            variant="outline" 
+                                            className="h-14 rounded-2xl border-border/40 hover:bg-primary/5 hover:border-primary/20 text-[13px] font-bold"
+                                            onClick={() => setInput(t)}
+                                        >
+                                            {t}
+                                        </Button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col gap-12">
+                                {messages.map((message) => (
+                                    <div
+                                        key={message.id}
+                                        className={cn(
+                                            "flex flex-col gap-3 animate-in fade-in duration-500",
+                                            message.role === "user" ? "items-end" : "items-start"
+                                        )}
+                                    >
+                                        <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground/30 px-1">
+                                            {message.role === "user" ? "Human" : "Thinknet"}
                                         </span>
-                                        {message.role === "assistant" &&
-                                            message.metadata?.rag && (
-                                                <div className="flex items-center gap-1.5 cursor-default">
-                                                    <Badge
-                                                        variant="outline"
-                                                        className="h-4 px-1.5 text-[9px] font-mono border-blue-200 bg-blue-50/50 text-blue-700 hover:bg-blue-100 transition-colors uppercase"
-                                                    >
-                                                        <Hash className="h-2 w-2 mr-1" />
-                                                        RAG Boosted
-                                                    </Badge>
+                                        <div className={cn(
+                                            "max-w-[90%] px-6 py-5 rounded-[2rem] shadow-sm",
+                                            message.role === "user" 
+                                                ? "bg-primary text-white rounded-tr-lg" 
+                                                : "bg-white dark:bg-zinc-900 border border-border/80 rounded-tl-lg"
+                                        )}>
+                                            {message.metadata?.thinking && (
+                                                <div className="mb-6 bg-muted/30 rounded-3xl p-5 border border-dashed border-border/50 text-[13px] text-muted-foreground italic space-y-3">
+                                                    <div className="flex items-center gap-2 mb-3 opacity-50">
+                                                        <BrainCircuit className="h-4 w-4 animate-pulse text-primary" />
+                                                        <span className="text-[9px] font-black uppercase tracking-widest text-primary/80">Thought Pipeline</span>
+                                                    </div>
+                                                    <div className="opacity-80 leading-relaxed font-mono text-[12px]">
+                                                        {message.metadata.thinking}
+                                                    </div>
                                                 </div>
                                             )}
-                                    </div>
-                                    {message.role === "assistant" &&
-                                    message.metadata?.thinking ? (
-                                        <details className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-900 shadow-sm">
-                                            <summary className="cursor-pointer list-none font-semibold uppercase tracking-wide text-[10px] text-amber-700 select-none">
-                                                思考过程（点击展开）
-                                            </summary>
-                                            <div className="mt-2 whitespace-pre-wrap leading-relaxed opacity-90">
-                                                {message.metadata.thinking}
+                                            <div className="prose prose-sm dark:prose-invert max-w-none text-[15px] font-medium leading-relaxed break-words opacity-95">
+                                                <ReactMarkdown>{message.content || (message.metadata?.thinking ? "..." : "")}</ReactMarkdown>
                                             </div>
-                                        </details>
-                                    ) : null}
-                                    <div
-                                        className={`px-5 py-4 rounded-3xl shadow-sm text-sm leading-relaxed border transition-shadow hover:shadow-md ${
-                                            message.role === "user"
-                                                ? "bg-primary text-primary-foreground border-primary rounded-tr-none"
-                                                : "bg-white text-foreground border-border rounded-tl-none"
-                                        }`}
-                                    >
-                                        <div className="prose prose-slate max-w-none dark:prose-invert break-words">
-                                            <ReactMarkdown>
-                                                {message.content}
-                                            </ReactMarkdown>
+                                            {message.metadata?.sourceDocuments && message.metadata.sourceDocuments.length > 0 && (
+                                                <div className="mt-8 pt-6 border-t border-border/10">
+                                                    <div className="flex items-center gap-2 text-[10px] font-black text-muted-foreground/40 uppercase tracking-[0.2em] mb-4">
+                                                        <Search className="h-3 w-3" />
+                                                        Knowledge Citations
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {(() => {
+                                                            const docMap = new Map<string, { title: string; count: number; maxScore: number }>();
+                                                            for (const doc of message.metadata.sourceDocuments!) {
+                                                                const key = doc.id || doc.title;
+                                                                const existing = docMap.get(key);
+                                                                if (existing) {
+                                                                    existing.count += 1;
+                                                                    existing.maxScore = Math.max(existing.maxScore, doc.score || 0);
+                                                                } else {
+                                                                    docMap.set(key, { title: doc.title, count: 1, maxScore: doc.score || 0 });
+                                                                }
+                                                            }
+                                                            return Array.from(docMap.values())
+                                                                .sort((a, b) => b.maxScore - a.maxScore)
+                                                                .map((doc, idx) => (
+                                                                    <div
+                                                                        key={idx}
+                                                                        className="bg-muted/40 border border-border/40 rounded-full px-4 py-1.5 flex items-center gap-2.5 hover:bg-muted transition-colors cursor-help group/source"
+                                                                        title={`相关度: ${(doc.maxScore * 100).toFixed(1)}%`}
+                                                                    >
+                                                                        <span className="text-[10px] font-bold text-primary">{idx + 1}</span>
+                                                                        <span className="text-[11px] font-bold text-muted-foreground group-hover/source:text-foreground transition-colors truncate max-w-[140px]">
+                                                                            {doc.title}
+                                                                        </span>
+                                                                        {doc.count > 1 && (
+                                                                            <span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded-md text-[9px] font-black">
+                                                                                {doc.count}x
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                ));
+                                                        })()}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-            </ScrollArea>
-
-            <footer className="p-6 bg-[#F9FBFC]/80 backdrop-blur-md border-t border-border shrink-0">
-                <div className="max-w-4xl mx-auto space-y-4">
-                    <div className="flex items-center gap-3 px-1 overflow-x-auto whitespace-nowrap scrollbar-hide no-scrollbar h-6">
-                        {ragStrategy?.reason && (
-                            <div className="flex items-center gap-2 text-[10px] font-bold text-muted-foreground bg-muted/60 px-3 py-1 rounded-full border border-border/50 shrink-0">
-                                <Wand2 className="h-3 w-3 text-primary/70" />
-                                <span>策略建议：{ragStrategy.reason}</span>
+                                ))}
+                                {isThinking && !messages.some(m => m.id.startsWith('a-stream') && m.content) && (
+                                    <div className="flex items-center gap-1.5 px-4 opacity-40">
+                                        <div className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.3s]" />
+                                        <div className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce [animation-delay:-0.15s]" />
+                                        <div className="h-1.5 w-1.5 rounded-full bg-primary animate-bounce" />
+                                    </div>
+                                )}
+                                <div ref={scrollEndRef} className="h-40" />
                             </div>
                         )}
                     </div>
-                    <div className="relative group">
-                        <div className="absolute -inset-1 bg-gradient-to-r from-primary/10 to-blue-400/10 blur opacity-40 group-focus-within:opacity-100 transition-opacity duration-500" />
-                        <div className="relative bg-card border border-border rounded-[2rem] p-3 shadow-sm group-focus-within:border-primary/40 group-focus-within:shadow-lg transition-all">
-                            <div className="flex items-center gap-3">
-                                <Input
-                                    value={input}
-                                    onChange={(e) => {
-                                        setInput(e.target.value);
-                                        if (error) {
-                                            clearError();
-                                        }
-                                    }}
-                                    onKeyDown={handleKeyDown}
-                                    placeholder="输入问题或任务指令..."
-                                    className="flex-1 bg-transparent border-none focus-visible:ring-0 text-base py-6 h-12"
-                                    disabled={isThinking}
-                                />
-                                <Button
-                                    onClick={() => void sendMessage()}
-                                    disabled={!input.trim() || isThinking}
-                                    className="h-12 w-12 rounded-full p-0 shrink-0 shadow-lg shadow-primary/20 hover:scale-105 transition-transform active:scale-95 disabled:scale-100"
-                                >
-                                    {isThinking ? (
-                                        <Loader2 className="h-6 w-6 animate-spin" />
-                                    ) : (
-                                        <Send className="h-5 w-5" />
-                                    )}
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                    {error ? (
-                        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
-                            {error}
-                        </div>
-                    ) : null}
-                    <p className="text-[10px] text-center text-muted-foreground/60 uppercase tracking-widest font-medium">
-                        AI Assistant powered by RAG Engine •{" "}
-                        {activeModel?.provider || "UNSPECIFIED"}
-                    </p>
                 </div>
-            </footer>
+
+                {/* Input Area */}
+                <div className="absolute bottom-10 left-0 right-0 px-6 sm:px-12 z-20">
+                    <div className="max-w-4xl mx-auto relative group">
+                        <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 to-blue-500/10 blur-2xl rounded-[3rem] opacity-0 group-focus-within:opacity-100 transition-opacity duration-1000" />
+                        <div className="relative bg-white dark:bg-zinc-900 border border-border shadow-2xl rounded-[2.5rem] p-3 flex items-center gap-2 ring-1 ring-border/20">
+                            <textarea
+                                value={input}
+                                onChange={(e) => { setInput(e.target.value); if (error) clearError(); }}
+                                onKeyDown={handleKeyDown}
+                                placeholder="输入消息..."
+                                className="flex-1 bg-transparent px-6 py-4 outline-none text-[15px] font-medium resize-none max-h-40 min-h-[56px] leading-relaxed"
+                                rows={1}
+                                disabled={isThinking}
+                            />
+                            <Button
+                                onClick={() => void sendMessage()}
+                                disabled={!input.trim() || isThinking}
+                                className={cn(
+                                    "h-12 w-12 rounded-full p-0 shrink-0",
+                                    input.trim() ? "bg-primary text-white" : "bg-muted text-muted-foreground/20"
+                                )}
+                            >
+                                {isThinking ? <Loader2 className="animate-spin h-5 w-5" /> : <ArrowUp className="h-5 w-5" strokeWidth={3} />}
+                            </Button>
+                        </div>
+                        {error && <div className="mt-4 text-center text-[11px] font-bold text-red-500 uppercase tracking-widest">{error}</div>}
+                    </div>
+                </div>
+            </main>
         </div>
     );
 }

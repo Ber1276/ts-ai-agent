@@ -67,14 +67,42 @@
 
 @layer utilities {
   .glass {
-    @apply bg-background/80 backdrop-blur-md border border-border/50;
+    @apply bg-background/70 backdrop-blur-xl border border-white/20 shadow-xl;
   }
-  
-  .chat-bubble-user {
-    @apply bg-primary text-primary-foreground rounded-2xl rounded-tr-none px-4 py-2.5 shadow-sm;
+
+  .premium-gradient {
+    @apply bg-gradient-to-br from-primary via-primary/90 to-blue-600;
   }
-  
-  .chat-bubble-ai {
-    @apply bg-muted text-foreground rounded-2xl rounded-tl-none px-4 py-2.5 shadow-sm border border-border/50;
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0) 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0) 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite linear;
+  }
+
+  @keyframes shimmer {
+    from {
+      background-position: 200% 0;
+    }
+    to {
+      background-position: -200% 0;
+    }
+  }
+
+  .active-history {
+    @apply ring-2 ring-primary/40 bg-primary/5 border-primary/20 shadow-md;
+  }
+
+  .prose pre {
+    @apply bg-muted/80 border border-border/50 rounded-xl p-4 my-4 overflow-x-auto;
+  }
+
+  .prose code {
+    @apply bg-muted/50 px-1.5 py-0.5 rounded text-primary font-mono text-sm;
   }
 }

@@ -9,6 +9,9 @@ import {
     type ModelServiceSaveInput,
     type ModelServiceItem,
     type ModelServiceTestResult,
+    type RagConfigInfo,
+    type RagConfigUpdateInput,
+    type RagRetrieverMode,
 } from "share";
 
 export type BackendHonoContract = AppType;
@@ -75,6 +78,9 @@ export interface ChatStreamCallbacks {
     onRunStart?: (
         event: Extract<ChatStreamEvent, { type: "run_start" }>,
     ) => void;
+    onRetrieval?: (
+        event: Extract<ChatStreamEvent, { type: "retrieval_hits" }>,
+    ) => void;
     onChunk: (event: Extract<ChatStreamEvent, { type: "chunk" }>) => void;
     onDone: (event: Extract<ChatStreamEvent, { type: "done" }>) => void;
     onError: (message: string) => void;
@@ -84,7 +90,7 @@ export interface ChatStreamCallbacks {
 }
 
 export interface RagStrategyInfo {
-    mode: "keyword" | "vector";
+    mode: RagRetrieverMode;
     shouldUseVectorDb: boolean;
     reason: string;
 }
@@ -92,11 +98,13 @@ export interface RagStrategyInfo {
 export interface IndexedDocumentInfo {
     title: string;
     chunkCount: number;
+    embeddedChunkCount: number;
 }
 
 export interface RagStrategyResponse {
     strategy: RagStrategyInfo;
     indexedDocuments: IndexedDocumentInfo[];
+    config: RagConfigInfo;
 }
 
 export interface RagUploadResult {
@@ -104,6 +112,7 @@ export interface RagUploadResult {
     title: string;
     chunkCount: number;
     charCount: number;
+    embeddedChunkCount: number;
 }
 
 export async function fetchModelServices(): Promise<ModelServiceItem[]> {
@@ -251,6 +260,84 @@ export async function fetchRagStrategy(): Promise<RagStrategyResponse> {
     return response.data;
 }
 
+export async function fetchRagConfig(): Promise<RagConfigInfo> {
+    const res = await fetch("/api/rag/config");
+    if (!res.ok) {
+        throw new Error(`Load RAG config failed with status ${res.status}`);
+    }
+
+    const response = (await res.json()) as ApiResponse<{ config: RagConfigInfo }>;
+    if (!response.success || !response.data) {
+        throw new Error(response.error?.message || "Load RAG config failed");
+    }
+
+    return response.data.config;
+}
+
+export async function saveRagConfig(
+    config: RagConfigUpdateInput,
+): Promise<RagConfigInfo> {
+    const res = await fetch("/api/rag/config", {
+        method: "PUT",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ config }),
+    });
+
+    if (!res.ok) {
+        let msg = `Save RAG config failed with status ${res.status}`;
+        try {
+            const body = await res.json();
+            if (body?.error?.message) {
+                msg = body.error.message;
+            }
+        } catch {
+            // Error parsing JSON, ignore and use default message
+        }
+        throw new Error(msg);
+    }
+
+    const response = (await res.json()) as ApiResponse<{ config: RagConfigInfo }>;
+    if (!response.success || !response.data) {
+        throw new Error(response.error?.message || "Save RAG config failed");
+    }
+
+    return response.data.config;
+}
+
+export async function testRagEmbeddingConfig(
+    config: RagConfigUpdateInput,
+): Promise<{ vectorSize?: number }> {
+    const res = await fetch("/api/rag/test-embedding", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ config }),
+    });
+
+    if (!res.ok) {
+        let msg = `Test embedding failed with status ${res.status}`;
+        try {
+            const body = await res.json();
+            if (body?.error?.message) {
+                msg = body.error.message;
+            }
+        } catch {
+            // ignore
+        }
+        throw new Error(msg);
+    }
+
+    const response = (await res.json()) as ApiResponse<{ vectorSize: number }>;
+    if (!response.success || !response.data) {
+        throw new Error(response.error?.message || "Test embedding failed");
+    }
+
+    return response.data;
+}
+
 export async function uploadRagDocument(input: {
     title?: string;
     content?: string;
@@ -367,6 +454,11 @@ export const startChatStream = (
                     continue;
                 }
 
+                if (parsed.type === "retrieval_hits") {
+                    callbacks.onRetrieval?.(parsed);
+                    continue;
+                }
+
                 if (parsed.type === "chunk") {
                     callbacks.onChunk(parsed);
                     continue;
@@ -405,5 +497,23 @@ export const startChatStream = (
 
     return () => {
         controller.abort();
-    };
 };
+}
+
+export async function fetchRuns(): Promise<any[]> {
+    const res = await fetch("/api/chat/stream/runs");
+    if (!res.ok) {
+        throw new Error("Failed to fetch historical runs");
+    }
+    const data = await res.json();
+    return data.data?.runs || [];
+}
+
+export async function deleteRun(runId: string): Promise<void> {
+    const res = await fetch(`/api/chat/stream/runs/${runId}`, {
+        method: "DELETE",
+    });
+    if (!res.ok) {
+        throw new Error("Failed to delete chat run");
+    }
+}

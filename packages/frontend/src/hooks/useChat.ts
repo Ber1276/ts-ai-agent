@@ -5,6 +5,7 @@ import {
     fetchRagStrategy,
     fetchModelServices,
     fetchChatResponse,
+    saveRagConfig,
     type IndexedDocumentInfo,
     type RagStrategyInfo,
     saveModelService,
@@ -12,12 +13,16 @@ import {
     testModelService,
     updateModelService,
     uploadRagDocument,
+    fetchRuns,
+    deleteRun,
 } from "../api/chatApi";
 import type { UIMessage } from "../types/chat";
 import type {
     ModelSelectionInput,
     ModelServiceItem,
     ModelServiceTestResult,
+    RagConfigInfo,
+    RagConfigUpdateInput,
 } from "share";
 
 function createMessage(
@@ -32,9 +37,16 @@ function createMessage(
     };
 }
 
-export function useChat() {
+interface UseChatOptions {
+    loadModelServices?: boolean;
+    loadRagOverview?: boolean;
+}
+
+export function useChat(options: UseChatOptions = {}) {
+    const { loadModelServices = true, loadRagOverview = true } = options;
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState<UIMessage[]>([]);
+    const [historyRuns, setHistoryRuns] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [streaming, setStreaming] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -52,17 +64,21 @@ export function useChat() {
         useState<ModelServiceTestResult | null>(null);
     const [testingModelService, setTestingModelService] = useState(false);
     const [savingModelService, setSavingModelService] = useState(false);
-    const [deletingModelService, setDeletingModelService] = useState(false);
+    const [deletingModelServiceId, setDeletingModelServiceId] = useState<
+        string | null
+    >(null);
     const [editingModelServiceId, setEditingModelServiceId] = useState<
         string | null
     >(null);
     const [ragStrategy, setRagStrategy] = useState<RagStrategyInfo | null>(
         null,
     );
+    const [ragConfig, setRagConfig] = useState<RagConfigInfo | null>(null);
     const [indexedDocuments, setIndexedDocuments] = useState<
         IndexedDocumentInfo[]
     >([]);
     const [loadingRag, setLoadingRag] = useState(false);
+    const [savingRagConfig, setSavingRagConfig] = useState(false);
     const [uploadingRag, setUploadingRag] = useState(false);
     const [ragUploadMessage, setRagUploadMessage] = useState<string | null>(
         null,
@@ -70,17 +86,22 @@ export function useChat() {
     const [ragTitle, setRagTitle] = useState("");
     const [ragContent, setRagContent] = useState("");
     const stopStreamRef = useRef<(() => void) | null>(null);
+    const customDraftRef = useRef({
+        customEndpoint: "",
+        customModel: "",
+        customApiKey: "",
+        editingModelServiceId: null as string | null,
+    });
 
     const buildModelSelection = useCallback(():
         | ModelSelectionInput
         | undefined => {
         if (selectedServiceId === "custom") {
-            const hasCompleteCustomConfig =
-                !!customEndpoint.trim() &&
-                !!customModel.trim() &&
-                !!customApiKey.trim();
-
-            if (hasCompleteCustomConfig) {
+            if (
+                customEndpoint.trim() &&
+                customModel.trim() &&
+                customApiKey.trim()
+            ) {
                 return {
                     endpoint: customEndpoint.trim(),
                     model: customModel.trim(),
@@ -88,24 +109,7 @@ export function useChat() {
                 };
             }
 
-            const fallbackService =
-                modelServices.find((item) => item.isDefault) ??
-                modelServices[0];
-
-            if (fallbackService) {
-                return {
-                    serviceId: fallbackService.id,
-                    apiKey: presetApiKeyOverride.trim() || undefined,
-                };
-            }
-
-            if (
-                !customEndpoint.trim() ||
-                !customModel.trim() ||
-                !customApiKey.trim()
-            ) {
-                return undefined;
-            }
+            return undefined;
         }
 
         return {
@@ -116,10 +120,18 @@ export function useChat() {
         customApiKey,
         customEndpoint,
         customModel,
-        modelServices,
         presetApiKeyOverride,
         selectedServiceId,
     ]);
+
+    useEffect(() => {
+        customDraftRef.current = {
+            customEndpoint,
+            customModel,
+            customApiKey,
+            editingModelServiceId,
+        };
+    }, [customApiKey, customEndpoint, customModel, editingModelServiceId]);
 
     const refreshModelServices = useCallback(async () => {
         setLoadingModelServices(true);
@@ -129,12 +141,20 @@ export function useChat() {
 
             setSelectedServiceId((prev) => {
                 if (prev === "custom") {
-                    const hasCompleteCustomConfig =
-                        !!customEndpoint.trim() &&
-                        !!customModel.trim() &&
-                        !!customApiKey.trim();
+                    const {
+                        customEndpoint: draftEndpoint,
+                        customModel: draftModel,
+                        customApiKey: draftApiKey,
+                        editingModelServiceId: draftEditingId,
+                    } = customDraftRef.current;
 
-                    if (hasCompleteCustomConfig) {
+                    const hasCustomDraft =
+                        !!draftEditingId ||
+                        !!draftEndpoint.trim() ||
+                        !!draftModel.trim() ||
+                        !!draftApiKey.trim();
+
+                    if (hasCustomDraft) {
                         return prev;
                     }
                 }
@@ -155,11 +175,36 @@ export function useChat() {
         } finally {
             setLoadingModelServices(false);
         }
-    }, [customApiKey, customEndpoint, customModel]);
+    }, []);
 
     useEffect(() => {
+        if (!loadModelServices) {
+            return;
+        }
         void refreshModelServices();
-    }, [refreshModelServices]);
+    }, [loadModelServices, refreshModelServices]);
+
+    const loadHistory = useCallback(async () => {
+        try {
+            const runs = await fetchRuns();
+            setHistoryRuns(runs);
+        } catch (err) {
+            console.error(err);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadHistory();
+    }, [loadHistory]);
+
+    const removeHistoryRun = useCallback(async (runId: string) => {
+        try {
+            await deleteRun(runId);
+            setHistoryRuns((prev) => prev.filter((r) => r.runId !== runId));
+        } catch (err) {
+            console.error(err);
+        }
+    }, []);
 
     const refreshRagOverview = useCallback(async () => {
         setLoadingRag(true);
@@ -167,6 +212,7 @@ export function useChat() {
             const data = await fetchRagStrategy();
             setRagStrategy(data.strategy);
             setIndexedDocuments(data.indexedDocuments);
+            setRagConfig(data.config);
         } catch (err) {
             const message =
                 err instanceof Error
@@ -179,8 +225,11 @@ export function useChat() {
     }, []);
 
     useEffect(() => {
+        if (!loadRagOverview) {
+            return;
+        }
         void refreshRagOverview();
-    }, [refreshRagOverview]);
+    }, [loadRagOverview, refreshRagOverview]);
 
     useEffect(() => {
         setModelTestResult(null);
@@ -191,6 +240,16 @@ export function useChat() {
         customApiKey,
         presetApiKeyOverride,
     ]);
+
+    useEffect(() => {
+        if (selectedServiceId !== "custom" && editingModelServiceId) {
+            setEditingModelServiceId(null);
+            setCustomEndpoint("");
+            setCustomModel("");
+            setCustomApiKey("");
+            setSaveAsDefault(true);
+        }
+    }, [editingModelServiceId, selectedServiceId]);
 
     const runModelServiceTest = useCallback(async () => {
         const modelSelection = buildModelSelection();
@@ -231,9 +290,11 @@ export function useChat() {
         const endpoint = customEndpoint.trim();
         const model = customModel.trim();
         const apiKey = customApiKey.trim();
+        const shouldUpdateApiKey = apiKey.length > 0;
+        const isEditing = Boolean(editingModelServiceId);
 
-        if (!endpoint || !model || !apiKey) {
-            setError("endpoint/model/apiKey are required for saving model.");
+        if (!endpoint || !model || (!isEditing && !apiKey)) {
+            setError("endpoint/model/apiKey are required for creating model.");
             return;
         }
 
@@ -242,21 +303,18 @@ export function useChat() {
 
         try {
             const label = `${model} @ ${new URL(endpoint).host}`;
+            const payload = {
+                label,
+                endpoint,
+                model,
+                ...(shouldUpdateApiKey ? { apiKey } : {}),
+                isDefault: saveAsDefault,
+            };
             const data = editingModelServiceId
                 ? await updateModelService(editingModelServiceId, {
-                      label,
-                      endpoint,
-                      model,
-                      apiKey,
-                      isDefault: saveAsDefault,
+                      ...payload,
                   })
-                : await saveModelService({
-                      label,
-                      endpoint,
-                      model,
-                      apiKey,
-                      isDefault: saveAsDefault,
-                  });
+                : await saveModelService(payload);
 
             setModelServices(data.services);
             setSelectedServiceId(data.saved.id);
@@ -325,7 +383,7 @@ export function useChat() {
             return;
         }
 
-        setDeletingModelService(true);
+        setDeletingModelServiceId(serviceId);
         setError(null);
         try {
             const data = await deleteModelService(id);
@@ -353,9 +411,32 @@ export function useChat() {
                     : "Delete model service failed";
             setError(message);
         } finally {
-            setDeletingModelService(false);
+            setDeletingModelServiceId(null);
         }
     }, []);
+
+    const persistRagConfig = useCallback(
+        async (input: RagConfigUpdateInput) => {
+            setSavingRagConfig(true);
+            setError(null);
+            try {
+                const config = await saveRagConfig(input);
+                setRagConfig(config);
+                await refreshRagOverview();
+                return config;
+            } catch (err) {
+                const message =
+                    err instanceof Error
+                        ? err.message
+                        : "Save RAG config failed";
+                setError(message);
+                throw err;
+            } finally {
+                setSavingRagConfig(false);
+            }
+        },
+        [refreshRagOverview],
+    );
 
     const uploadRagFromText = useCallback(async () => {
         const title = ragTitle.trim();
@@ -374,7 +455,7 @@ export function useChat() {
                 content,
             });
             setRagUploadMessage(
-                `Indexed ${result.ingested.title} with ${result.ingested.chunkCount} chunks.`,
+                `Indexed ${result.ingested.title} with ${result.ingested.chunkCount} chunks (${result.ingested.embeddedChunkCount} embedded).`,
             );
             setRagContent("");
             setRagTitle("");
@@ -396,7 +477,7 @@ export function useChat() {
             try {
                 const result = await uploadRagDocument({ file });
                 setRagUploadMessage(
-                    `Indexed ${result.ingested.title} with ${result.ingested.chunkCount} chunks.`,
+                    `Indexed ${result.ingested.title} with ${result.ingested.chunkCount} chunks (${result.ingested.embeddedChunkCount} embedded).`,
                 );
                 await refreshRagOverview();
             } catch (err) {
@@ -473,6 +554,27 @@ export function useChat() {
             onRunStart: (event) => {
                 setActiveRunId(event.runId);
             },
+            onRetrieval: (event) => {
+                if (!event.hits || event.hits.length === 0) return;
+                
+                setMessages((prev) =>
+                    prev.map((item) =>
+                        item.id === assistantMessageId
+                            ? {
+                                  ...item,
+                                  metadata: {
+                                      ...item.metadata,
+                                      sourceDocuments: event.hits.map(h => ({
+                                          id: h.documentId,
+                                          title: h.documentTitle,
+                                          score: h.score,
+                                      }))
+                                  }
+                              }
+                            : item
+                    )
+                );
+            },
             onChunk: (event) => {
                 setActiveRunId((prev) => prev ?? event.runId);
                 setMessages((prev) =>
@@ -509,9 +611,6 @@ export function useChat() {
                 setLastHeartbeatAt(event.ts);
             },
         });
-
-        // TODO(handwrite): add reconnect strategy with exponential backoff.
-        // Required: persist last received chunk index and support resume after reconnect.
     }, [appendMessage, buildModelSelection, input, streaming]);
 
     const stopStream = useCallback(async () => {
@@ -583,6 +682,9 @@ export function useChat() {
         input,
         setInput,
         messages,
+        setMessages,
+        historyRuns,
+        loadHistory,
         loading,
         streaming,
         error,
@@ -604,11 +706,13 @@ export function useChat() {
         modelTestResult,
         testingModelService,
         savingModelService,
-        deletingModelService,
+        deletingModelServiceId,
         editingModelServiceId,
         ragStrategy,
+        ragConfig,
         indexedDocuments,
         loadingRag,
+        savingRagConfig,
         uploadingRag,
         ragUploadMessage,
         ragTitle,
@@ -623,6 +727,7 @@ export function useChat() {
         removeModelService,
         refreshModelServices,
         refreshRagOverview,
+        persistRagConfig,
         uploadRagFromText,
         uploadRagFromFile,
         canSend,
@@ -634,5 +739,7 @@ export function useChat() {
         clearError,
         isThinking,
         activeModel,
+        removeHistoryRun,
     };
 }
+

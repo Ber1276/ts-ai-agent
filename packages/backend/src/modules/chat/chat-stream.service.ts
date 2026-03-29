@@ -9,7 +9,7 @@ import {
     resolveModelSelection,
     type ResolvedModelConfig,
 } from "../model/model-service.js";
-import { retrieveFromIndexedDocuments } from "../rag/document-index.js";
+import { retrieveFromIndexedDocuments, type RetrievalHit } from "../rag/document-index.js";
 import {
     logUpstreamHttpError,
     readUpstreamError,
@@ -26,7 +26,7 @@ type State =
 
 type EventType =
     | { type: "START_RETRIEVAL" }
-    | { type: "RETRIEVAL_OK"; hits: string[] }
+    | { type: "RETRIEVAL_OK"; hits: RetrievalHit[] }
     | { type: "RETRIEVAL_ERR"; error: string }
     | { type: "START_GENERATION" }
     | { type: "TOKEN"; text: string; chunkType?: "content" | "reasoning" }
@@ -44,7 +44,7 @@ interface RunContext {
     state: State;
     chunkIndex: number;
     output: string;
-    retrievalHits: string[];
+    retrievalHits: RetrievalHit[];
     startedAt: number;
     updatedAt: number;
     errorMessage: string | null;
@@ -205,9 +205,9 @@ function applyEvent(ctx: RunContext, event: EventType): void {
  * Handwritten keyword retrieval baseline.
  * This gives you a no-SDK retrieval implementation before vector DB integration.
  */
-async function retrieveContext(prompt: string): Promise<string[]> {
+async function retrieveContext(prompt: string): Promise<RetrievalHit[]> {
     await sleep(20);
-    return retrieveFromIndexedDocuments(prompt, 6);
+    return retrieveFromIndexedDocuments(prompt);
 }
 
 /**
@@ -283,7 +283,7 @@ async function* parseSseDataLines(
  */
 async function* streamModelTokens(
     ctx: RunContext,
-    retrievalHits: string[],
+    retrievalHits: RetrievalHit[],
     signal: AbortSignal,
     modelConfig: ResolvedModelConfig,
 ): AsyncGenerator<{ chunkType: "content" | "reasoning"; text: string }> {
@@ -302,7 +302,7 @@ async function* streamModelTokens(
                     role: "system",
                     content: retrievalHits.length
                         ? `Use retrieved context when relevant:\n${retrievalHits
-                              .map((h, i) => `${i + 1}. ${h}`)
+                              .map((h, i) => `${i + 1}. ${h.text}`)
                               .join("\n")}`
                         : "No additional retrieved context.",
                 },
@@ -385,6 +385,14 @@ export class ChatStreamService {
         return this.runStore.getRun(runId);
     }
 
+    listRuns() {
+        return this.runStore.listRuns();
+    }
+
+    deleteRun(runId: string) {
+        return this.runStore.deleteRun(runId);
+    }
+
     createStream(
         prompt: string,
         signal: AbortSignal,
@@ -445,12 +453,26 @@ export class ChatStreamService {
                     await this.runStore.updateRun(ctx.runId, {
                         status: mapStateToPersistedStatus(ctx.state),
                         outputSummary: ctx.output.slice(-1200),
-                        retrievalHits: [...ctx.retrievalHits],
+                        retrievalHits: ctx.retrievalHits.map((h) => h.text),
                         errorMessage: ctx.errorMessage,
                         finishedAt: isTerminalState(ctx.state)
                             ? new Date().toISOString()
                             : null,
                     });
+
+                    if (event.type === "RETRIEVAL_OK") {
+                        sendEvent({
+                            type: "retrieval_hits",
+                            runId: ctx.runId,
+                            hits: event.hits.map((h) => ({
+                                documentId: h.documentId,
+                                documentTitle: h.documentTitle,
+                                content: h.content,
+                                score: h.score,
+                            })),
+                        });
+                        return;
+                    }
 
                     if (event.type === "TOKEN") {
                         sendEvent({
@@ -508,7 +530,7 @@ export class ChatStreamService {
 
                         await dispatch({ type: "START_RETRIEVAL" });
 
-                        let hits: string[] = [];
+                        let hits: RetrievalHit[] = [];
                         try {
                             hits = await retrieveContext(ctx.prompt);
                         } catch (err) {
