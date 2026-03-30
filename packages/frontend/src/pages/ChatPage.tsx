@@ -1,7 +1,6 @@
 import {
     Bot,
     ChevronRight,
-    Wand2,
     Trash2,
     MessageSquare,
     Plus,
@@ -10,10 +9,7 @@ import {
     ArrowUp,
     Menu,
     Loader2,
-    Clock,
     Settings,
-    LayoutGrid,
-    SearchCode,
     Sparkles
 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
@@ -36,7 +32,6 @@ export function ChatPage() {
         error,
         clearError,
         isThinking,
-        ragStrategy,
         modelServices,
         selectedServiceId,
         setSelectedServiceId,

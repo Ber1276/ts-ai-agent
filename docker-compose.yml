@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  db:
+      image: pgvector/pgvector:pg16
+      container_name: ts-ai-agent-db
+      restart: always
+      environment:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ber1276
+          POSTGRES_DB: postgres
+      ports:
+          - "5432:5432"
+      volumes:
+          - postgres_data:/var/lib/postgresql/data
+      healthcheck:
+          test: ["CMD-SHELL", "pg_isready -U postgres"]
+          interval: 5s
+          timeout: 5s
+          retries: 5
+
+  backend:
+      build:
+          context: .
+          dockerfile: Dockerfile.backend
+      container_name: ts-ai-agent-backend
+      depends_on:
+          db:
+              condition: service_healthy
+      environment:
+          - DATABASE_URL=postgresql://postgres:ber1276@db:5432/postgres
+          - PORT=3000
+          - LLM_API_ENDPOINT=${LLM_API_ENDPOINT}
+          - LLM_API_MODEL=${LLM_API_MODEL}
+          - LLM_API_KEY=${LLM_API_KEY}
+          # Add other env variables here
+      ports:
+          - "3001:3000"
+
+  frontend:
+      build:
+          context: .
+          dockerfile: Dockerfile.frontend
+      container_name: ts-ai-agent-frontend
+      depends_on:
+          - backend
+      ports:
+          - "7777:80"
+
+volumes:
+  postgres_data:
