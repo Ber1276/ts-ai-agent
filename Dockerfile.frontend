@@ -8,18 +8,22 @@ WORKDIR /app
 
 # Copy root configuration files
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-# Copy required packages (share is often a dependency)
+# Copy required packages
 COPY packages/share ./packages/share
 COPY packages/frontend ./packages/frontend
 COPY packages/backend ./packages/backend
-# Frontend needs backend's types sometimes (via lib/types.ts or similar)
-# So we copy it too.
+# Copy prisma schema
+COPY prisma ./prisma
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile
 
-# Build share and frontend
+# Generate Prisma Client (backend type checking depends on it)
+RUN pnpm db:generate
+
+# Build share, backend, and then frontend
 RUN pnpm --filter share build
+RUN pnpm --filter agent-server build
 RUN pnpm --filter frontend build
 
 # --- Runtime Stage ---
